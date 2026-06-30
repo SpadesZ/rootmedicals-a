@@ -1,0 +1,40 @@
+<!--
+  檔案路徑: rootmedicals-a/llmebm/app/templates/_brand.html
+  產生時間: 2026-06-17 16:10 +08:00
+  版本: v0.1-交付整理
+  說明: llmebm 知識庫 UI 模板。
+  交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+  ----------------------------------------------------------------------------------------------------
+-->
+
+<!-- 
+# 路徑: rootmedicals-a/llmebm/app/templates/_brand.html
+# 版本: v0.2
+# 更版時間: 2026-05-05 18:40
+# 說明: 
+#   1. 改用 a 標籤包覆，達成點擊返回首頁 (index.html) 功能。
+#   2. Logo 尺寸增加 20% (由 24px 放大至 29px)。
+#   3. Brand Name 字體尺寸增加 20% (由 15px 放大至 18px)。
+# ----------------------------------------------------------------------------------------------------
+-->
+<a 
+    href="/" 
+    class="brand-container" 
+    style="display: flex; align-items: center; cursor: pointer; text-decoration: none; color: white;" 
+    id="system-brand-container"
+    title="Return to EBM Workspace"
+>
+    <img 
+        id="system-brand-logo" 
+        src="" 
+        alt="System Logo" 
+        style="display: none; height: 29px; margin-right: 10px; border-radius: 4px;"
+    >
+    <span 
+        class="brand-name" 
+        id="system-brand-name" 
+        style="font-weight: bold; font-size: 18px; margin-right: 20px;"
+    >
+        RootMedicals Health
+    </span>
+</a>

@@ -1,0 +1,19 @@
+# 路徑: C:\Users\88696\11_projects\rootmedicals-a\llmxx-client\requirements.txt
+# 版本: v0.2
+# 更版時間: 2026-05-04 09:38
+# 說明: llmxx-client (PySide6 擷取 + EasyOCR 辨識) 完整相依套件
+
+# --- UI 與螢幕擷取核心 ---
+PySide6>=6.5.0
+mss>=9.0.0
+Pillow>=10.0.0
+pywin32>=306
+
+# --- OCR 與版面分析核心 ---
+easyocr>=1.7.1
+opencv-python>=4.8.0
+numpy>=1.24.0
+
+# --- 後端通訊 (預留) ---
+requests>=2.31.0
+websockets>=11.0.3

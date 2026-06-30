@@ -1,0 +1,54 @@
+# 檔案路徑: rootmedicals-a/llmxx-client/apps/thin-capture-client/pyproject.toml
+# 產生時間: 2026-06-17 21:35 +08:00
+# 版本: v0.2-薄客戶端整理
+# 說明: thin capture client 套件設定。client 僅負責截圖、hotkey、tray、醫師浮窗與 HTTP 送出。
+# 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+# ----------------------------------------------------------------------------------------------------
+# 版本紀錄:
+# - v0.1: 原始 local OCR client 套件。
+# - v0.2: client 瘦身為 thin capture，移除 client OCR 引擎；OpenCV 僅保留做欄位框座標偵測。
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llmxx-client-thin-capture"
+version = "0.1.0"
+description = "RootMedicals llmxx-client thin screenshot sender with doctor alert widget."
+requires-python = ">=3.10"
+dependencies = [
+  "PySide6>=6.5.0",
+  "mss>=9.0.0",
+  "Pillow>=10.0.0",
+  "numpy>=1.24.0",
+  "opencv-python>=4.8.0",
+  "httpx>=0.27.0",
+  "pynput>=1.7.6",
+  "cryptography>=42.0.0",
+  "pywin32>=306; platform_system == 'Windows'"
+]
+
+[project.optional-dependencies]
+pdf-full = [
+  "layoutparser>=0.3.4",
+  "openvino>=2024.0.0",
+  "onnxruntime>=1.17.0",
+  "reportlab>=4.0.0",
+  "fastapi>=0.110.0",
+  "uvicorn>=0.27.0",
+  "sse-starlette>=2.0.0",
+  "qdrant-client>=1.9.0",
+  "sentence-transformers>=2.6.0",
+  "langchain>=0.2.0",
+  "pypdf>=4.0.0",
+  "pdfplumber>=0.11.0",
+  "pymupdf>=1.24.0"
+]
+
+[project.scripts]
+llmxx-client-thin-capture = "llmxx_client_thin_capture.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

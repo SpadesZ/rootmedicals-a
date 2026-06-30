@@ -1,0 +1,194 @@
+/*
+ * 檔案路徑: rootmedicals-a/llmebm/app/static/css/admin.css
+ * 產生時間: 2026-06-17 16:10 +08:00
+ * 版本: v0.1-交付整理
+ * 說明: llmebm 知識庫 UI 靜態資源。
+ * 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+ * ----------------------------------------------------------------------------------------------------
+ */
+
+/*
+# 路徑: rootmedicals-a/llmebm/app/static/css/admin.css
+# 版本: v0.3
+# 更版時間: 2026-05-08 18:00
+# 說明: 
+#   1. 絕對遵守第二定律：100% 保留 v1.2 的所有 Grid 網格樣式與舊版註解。
+#   2. [緊急修復] 解決「CSS Grid Blowout」災難：將 grid-template-columns 從 repeat(3, 1fr) 改為 repeat(3, minmax(0, 1fr))，強制鎖死絕對等寬。
+#   3. [防呆擴充] 為 select 元素加入 text-overflow: ellipsis，避免超長醫學名詞撐破 UI 導致按鈕掉落與卡片錯位。
+#   4. [v1.3 終極修復] 全面導入 box-sizing: border-box; 與 min-width: 0; 徹底解決 90vw + Padding 導致的容器撐破與邊界溢出災難。
+# ----------------------------------------------------------------------------------------------------
+*/
+
+.admin-container-fluid {
+    width: 90vw;
+    margin: 40px auto;
+    padding: 30px;
+    background: #fff;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    border-radius: 8px;
+    font-size: var(--font-base);
+    
+    /* [v1.3 修復] 核心防呆：強制 Padding 向內計算，絕對禁止撐破 90vw 導致白色背景不夠長 */
+    box-sizing: border-box;
+    max-width: 100%; 
+    overflow-x: hidden; 
+}
+
+/* Tab 活頁選單樣式 */
+.admin-tabs {
+    display: flex;
+    border-bottom: 2px solid var(--theme-dark-green);
+    margin-bottom: 30px;
+}
+.tab-btn {
+    padding: 12px 25px;
+    background: #f4f6f8;
+    border: none;
+    border-radius: 8px 8px 0 0;
+    cursor: pointer;
+    font-size: var(--font-lg);
+    font-weight: bold;
+    color: #666;
+    margin-right: 5px;
+    transition: background 0.3s, color 0.3s;
+}
+.tab-btn:hover {
+    background: #e1e5e8;
+}
+.tab-btn.active {
+    background: var(--theme-dark-green);
+    color: white;
+}
+.tab-content {
+    display: none; /* 預設隱藏，由 JS 控制顯示 */
+}
+.tab-content.active {
+    display: block;
+}
+
+/* 基礎表單與區塊保留 */
+.admin-title { color: var(--theme-dark-green); margin-top: 0; font-size: calc(24px * var(--text-scale)); border-bottom: 1px solid #eee; padding-bottom: 10px;}
+.form-group { margin-bottom: 20px; }
+.form-group label { display: block; font-weight: bold; margin-bottom: 8px; color: #555; }
+.form-group input[type="text"], .form-group select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: var(--font-md); }
+.btn-primary { background: var(--theme-dark-green); color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: var(--font-md);}
+.btn-secondary { background: #95a5a6; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin-left: 10px; font-size: var(--font-md);}
+#logo-preview { max-width: 200px; max-height: 80px; margin-top: 15px; border: 1px dashed #ccc; display: none; }
+.alert { padding: 15px; background: #d4edda; color: #155724; border-radius: 4px; margin-top: 20px; font-size: var(--font-md);}
+
+/* =========================================================================
+   層級建置器樣式 - 從根本解決 Grid 撐破災難
+   ========================================================================= */
+.taxonomy-chain { 
+    display: grid; 
+    /* 1fr 預設為 minmax(auto, 1fr)，會被超長醫學文字撐破。
+       改用 minmax(0, 1fr) 強制鎖死絕對固定寬度，保證 3 欄永遠嚴格等寬對齊 */
+    grid-template-columns: repeat(3, minmax(0, 1fr)); 
+    gap: 20px; /* 增加間距讓畫面更透氣 */
+    margin-bottom: 30px; 
+    width: 100%; /* 保證網格吃滿容器 */
+    
+    /* [v1.3 修復] 保證網格容器不受子元素外擴影響 */
+    box-sizing: border-box; 
+}
+
+.taxonomy-level { 
+    background: #f9f9f9; 
+    padding: 15px; 
+    border-radius: 6px; 
+    border: 1px solid #ddd; 
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    
+    /* [v1.3 修復] 避免內外距計算導致超出 */
+    box-sizing: border-box;
+    min-width: 0; /* 絕對剝奪寬度抵抗權 */
+}
+
+.taxonomy-level-header { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    margin-bottom: 10px; 
+}
+
+.taxonomy-level-header h4 { 
+    margin: 0; 
+    color: var(--theme-light-teal); 
+    font-size: var(--font-md); 
+}
+
+/* 確保下拉選單與操作按鈕絕對不換行、不擠壓 */
+.select-action-group { 
+    display: flex; 
+    gap: 5px; 
+    align-items: center; 
+    flex-wrap: nowrap; /* 核心防呆：絕對禁止換行 */
+    width: 100%;
+    
+    /* [v1.3 修復] 允許 Flex 容器縮小 */
+    min-width: 0; 
+    box-sizing: border-box;
+}
+
+.select-action-group select {
+    /* [v1.3 修復] flex-basis 0% 強制佔用剩餘空間，不再受內部文字長度干擾 */
+    flex: 1 1 0%; 
+    min-width: 0; /* 絕對剝奪寬度抵抗權 */
+    width: 100%; 
+    max-width: 100%;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+/* CRUD 操作按鈕 */
+.btn-crud { 
+    background: none; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; 
+    padding: 6px 8px; font-weight: bold; transition: all 0.2s;
+    font-size: var(--font-sm);
+    flex-shrink: 0; /* 核心防呆：絕對禁止按鈕被文字擠壓變形或縮小 */
+    white-space: nowrap;
+}
+.btn-crud:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-add { color: #28a745; border-color: #28a745; background: #e8f5e9;}
+.btn-add:hover:not(:disabled) { background: #28a745; color: white; }
+.btn-edit { color: #0056b3; border-color: #0056b3; }
+.btn-edit:hover:not(:disabled) { background: #0056b3; color: white; }
+.btn-del { color: #dc3545; border-color: #dc3545; }
+.btn-del:hover:not(:disabled) { background: #dc3545; color: white; }
+
+/* =========================================================================
+   第 6 區塊 CSV 上傳卡片專屬樣式 
+   ========================================================================= */
+.upload-block-grid-item {
+    background: #eef2f5;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #d1d8dd;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    
+    /* [v1.3 修復] 保證卡片 100% 貼合 Grid 軌道，絕不溢出 */
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+}
+
+.breadcrumb-hint {
+    color: var(--evidence-blue);
+    margin-top: 8px;
+    font-size: var(--font-sm);
+    background: #fff;
+    padding: 8px 12px;
+    border-radius: 4px;
+    border-left: 4px solid var(--theme-light-teal);
+    line-height: 1.4;
+    
+    /* [v1.3 修復] 文字超長時換行，不撐開容器 */
+    word-wrap: break-word;
+    white-space: normal;
+}

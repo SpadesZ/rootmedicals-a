@@ -1,0 +1,32 @@
+# 檔案路徑: rootmedicals-a/ebm-rag/requirements.txt
+# 產生時間: 2026-06-17 16:10 +08:00
+# 版本: v0.1-交付整理
+# 說明: EBM-RAG 服務入口、Docker 設定、文件或依賴描述。
+# 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+# ----------------------------------------------------------------------------------------------------
+
+# 路徑: rootmedicals-a/ebm-rag/requirements.txt
+# 版本: v0.5
+# 更版時間: 2026-05-10 20:30
+# 說明: 
+#   1. EBM-RAG 核心依賴清單。
+#   2. 引入 PyMuPDF (fitz) 與 OpenCV 負責高解析度影像點陣化與裁切。
+#   3. 引入 ultralytics (YOLO) 執行 DocLayNet 佈局識別。
+#   4. 引入 EasyOCR 執行文字辨識。
+# ----------------------------------------------------------------------------------------------------
+
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+pydantic>=2.0.0
+PyMuPDF>=1.23.0
+opencv-python-headless>=4.8.0
+numpy>=1.24.0
+ultralytics>=8.0.0
+huggingface_hub>=0.16.0
+easyocr>=1.7.0
+python-multipart>=0.0.6
+httpx>=0.27.0
+aiosqlite>=0.19.0
+qdrant-client>=1.9.0
+tiktoken>=0.7.0
+tenacity>=8.2.0

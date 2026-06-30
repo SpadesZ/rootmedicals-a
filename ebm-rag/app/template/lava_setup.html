@@ -1,0 +1,114 @@
+<!--
+  檔案路徑: rootmedicals-a/ebm-rag/app/template/lava_setup.html
+  產生時間: 2026-06-17 16:10 +08:00
+  版本: v0.1-交付整理
+  說明: RAG 管理介面 Jinja/HTML 模板。
+  交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+  ----------------------------------------------------------------------------------------------------
+-->
+
+<!--
+File Path: ebm-rag/app/template/lava_setup.html
+Timestamp: 2026-06-08
+Version: v0.5
+Description: LAVA Setup page for configuring provider connections and capability-specific RAG task bindings.
+----------------------------------------------------------------------------------------------------
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LAVA Setup - EBM-RAG</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<style>
+body { font-family: 'Inter', -apple-system, sans-serif; background:#f3f4f6; margin:0; padding:20px; font-size:13px; color:#1f2937; }
+.container { max-width:900px; margin:0 auto; }
+h1 { color:#005b6e; font-size:20px; margin-bottom:4px; }
+.subtitle { color:#6b7280; margin-bottom:24px; }
+.card { background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); padding:20px; margin-bottom:20px; }
+.card h2 { font-size:15px; color:#1f2937; margin:0 0 16px; border-bottom:1px solid #e5e7eb; padding-bottom:8px; }
+label { display:block; font-size:12px; color:#374151; margin-bottom:4px; font-weight:500; }
+input, select { width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; box-sizing:border-box; margin-bottom:12px; }
+button { padding:8px 16px; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; }
+.btn-primary { background:#005b6e; color:#fff; }
+.btn-primary:hover { background:#004a59; }
+.btn-danger { background:#dc2626; color:#fff; }
+.btn-success { background:#059669; color:#fff; }
+.btn-sm { padding:4px 10px; font-size:12px; }
+.tag { display:inline-block; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600; }
+.tag-green { background:#d1fae5; color:#065f46; }
+.tag-yellow { background:#fef3c7; color:#92400e; }
+.tag-red { background:#fee2e2; color:#991b1b; }
+table { width:100%; border-collapse:collapse; }
+th, td { text-align:left; padding:8px 10px; border-bottom:1px solid #f3f4f6; font-size:12px; }
+th { background:#f9fafb; font-weight:600; color:#374151; }
+.status-msg { padding:8px 12px; border-radius:6px; font-size:12px; margin-top:8px; }
+.status-ok { background:#d1fae5; color:#065f46; }
+.status-err { background:#fee2e2; color:#991b1b; }
+.models-list { max-height:150px; overflow-y:auto; border:1px solid #e5e7eb; border-radius:6px; padding:4px; }
+.models-list option { padding:4px; }
+nav { margin-bottom:20px; }
+nav a { color:#005b6e; text-decoration:none; margin-right:16px; font-weight:500; }
+nav a:hover { text-decoration:underline; }
+.section-badge { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+.badge-ok { background:#059669; }
+.badge-err { background:#dc2626; }
+.badge-warn { background:#d97706; }
+</style>
+</head>
+<body>
+<div class="container">
+  <nav><a href="/">← Main</a><a href="/admin">Admin</a></nav>
+  <h1>LAVA Setup</h1>
+  <p class="subtitle">Configure LLM connections and bind to RAG tasks.</p>
+
+  <!-- Add Connection -->
+  <div class="card">
+    <h2>Add Connection</h2>
+    <label>Provider</label>
+    <select id="new-provider">
+      <option value="openai">OpenAI</option>
+      <option value="xai">xAI (Grok)</option>
+      <option value="deepseek">DeepSeek</option>
+      <option value="mistral">Mistral</option>
+      <option value="openrouter">OpenRouter</option>
+      <option value="google">Google (Gemini)</option>
+      <option value="anthropic">Anthropic (Claude)</option>
+    </select>
+    <label>API Key</label>
+    <input type="password" id="new-api-key" placeholder="sk-your-api-key">
+    <label>Name (optional)</label>
+    <input type="text" id="new-name" placeholder="My Connection">
+    <button class="btn-primary" onclick="fetchModels()">Fetch Models</button>
+    <div id="models-container" style="display:none;margin-top:12px;">
+      <label>Model</label>
+      <select id="new-model-id" size="5" class="models-list"></select>
+      <div style="margin-top:10px;display:flex;gap:8px;">
+        <button class="btn-success" onclick="testConnection('chat')">Test Chat</button>
+        <button class="btn-success" onclick="testConnection('embedding')">Test Embedding</button>
+        <button class="btn-primary" onclick="createConnection()">Connect</button>
+      </div>
+    </div>
+    <div id="add-status"></div>
+  </div>
+
+  <!-- Connections List -->
+  <div class="card">
+    <h2>Connections <button class="btn-sm btn-primary" style="float:right" onclick="loadConnections()">Refresh</button></h2>
+    <table><thead><tr><th>#</th><th>Name</th><th>Provider</th><th>Model</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody id="conn-list"></tbody></table>
+    <div id="connection-status"></div>
+  </div>
+
+  <!-- Task Bindings -->
+  <div class="card">
+    <h2>Task Bindings <button class="btn-sm btn-primary" style="float:right" onclick="loadBindings()">Refresh</button></h2>
+    <div id="bindings-container"></div>
+    <div id="binding-status"></div>
+  </div>
+
+</div>
+<script src="/static/js/lava_setup.js?v=20260609e"></script>
+</body>
+</html>

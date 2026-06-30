@@ -1,0 +1,389 @@
+<!--
+  檔案路徑: rootmedicals-a/llmebm/app/templates/index.html
+  產生時間: 2026-06-17 16:10 +08:00
+  版本: v0.1-交付整理
+  說明: llmebm 知識庫 UI 模板。
+  交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+  ----------------------------------------------------------------------------------------------------
+-->
+
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RootMedicals-EBMDx Workspace</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/allfont.css">
+    
+    <style>
+        .global-nav-bar {
+            background-color: #006e82; /* 系統主視覺色 */
+            color: #fff;
+            display: flex;
+            align-items: center;
+            padding: 0 30px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+            position: relative;
+            z-index: 10;
+        }
+        .global-nav-bar ul {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            gap: 25px; /* 選單間距 */
+        }
+        .global-nav-bar li {
+            padding: 12px 0;
+        }
+        .global-nav-bar a {
+            color: #fff;
+            text-decoration: none;
+            font-size: 15px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+        .global-nav-bar a:hover {
+            opacity: 0.85;
+        }
+        /* 啟用狀態的底線提示 */
+        .global-nav-bar a.active::after {
+            content: '';
+            position: absolute;
+            bottom: -12px;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background-color: #f39c12; /* 搭配鈕色橘黃高亮 */
+        }
+    </style>
+</head>
+<body>
+    
+    {% include '_header.html' %}
+    {% include 'search.html' %}
+
+    <nav class="global-nav-bar">
+        <ul>
+            <li><a href="#" class="active">Specialties</a></li>
+            <li><a href="#">Latest Publishments</a></li>
+            <li><a href="#">Drug Library</a></li>
+            <li><a href="#">Chemo Regimens</a></li>
+            <li><a href="#">RootMed-Evaluators</a></li>
+            <li><a href="#" style="color: #f1c40f;">Clinic Case (SOAP/PICO/EHR)</a></li>
+        </ul>
+    </nav>
+
+    <div class="full-width-soap-section" style="display: none !important; width: 100%; padding: 12px 30px 8px 30px; background-color: #fcfcfc; border-bottom: 2px solid #eaeaea; box-sizing: border-box;">
+        <div class="soap-header-controls" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #ddd; padding-bottom: 8px; margin-bottom: 12px;">
+            <h2 style="color: #006e82; margin: 0; font-size: 18px;">Clinical Case Input (SOAP/PICO)</h2>
+            <button id="btn-analyze-soap" class="btn-search" style="background-color: #f39c12; color: white; border: none; padding: 8px 20px; font-size: var(--font-base); font-weight: bold; cursor: pointer; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                Run EBMDx Analysis
+            </button>
+        </div>
+        <textarea id="soap-textarea" class="high-contrast-input" rows="4" style="width: 100%; padding: 12px; font-size: var(--font-base); border: 2px solid #555; border-radius: 6px; box-sizing: border-box; background-color: #fff; box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);" placeholder="Enter patient SOAP notes here... (e.g., 70yo male, asymptomatic AAA measuring 4.5cm on ultrasound)"></textarea>
+    </div>
+
+    <div class="workspace-container split-layout" style="max-width: 100%; margin: 0; padding: 0;">
+        
+        <aside class="sidebar split-panel" id="panel-left" style="display: none !important; width: 20%; padding: 15px;">
+            <div class="panel-header-ctrl" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 style="margin: 0; font-size: 12px; color: #006e82; white-space: nowrap; overflow: hidden;">Navigation</h3>
+                <button class="btn-minimize-toggle" data-target="panel-left" style="cursor:pointer; background:none; border:none; color:#006e82; font-weight:bold;">[-]</button>
+            </div>
+            <div class="panel-inner-content">
+                <div class="search-within-box">
+                    <input type="text" id="local-search-input" placeholder="Search Within Text &#128269;" style="font-size: var(--font-sm); padding: 6px; width: 100%;">
+                </div>
+                <div class="sidebar-nav">
+                    <h3 class="nav-title" style="font-size: 10.5px;">Related Summaries</h3>
+                    <h4 class="nav-category-title">【科系種類】</h4>
+                    <ul id="sidebar-chapters-dept" class="chapter-list">
+                        <li>Cardiology</li><li>Vascular Surgery</li><li>Internal Medicine</li>
+                    </ul>
+                    <h4 class="nav-category-title">【狀態種類】</h4>
+                    <ul id="sidebar-chapters-status" class="chapter-list">
+                        <li>General Information</li><li>Epidemiology</li><li>Treatment</li>
+                    </ul>
+                </div>
+            </div>
+        </aside>
+
+        <div class="resizer" id="resizer-left" style="display: none !important;"></div>
+
+        <main class="main-content split-panel" id="panel-middle" style="flex: 1 1 100%; padding: 5px 30px; border-left: none;">
+            <div class="panel-header-ctrl" style="display: none !important; justify-content: flex-end; margin-bottom: 0; padding-bottom: 0;">
+                <button class="btn-minimize-toggle" data-target="panel-middle" style="cursor:pointer; background:none; border:none; color:#006e82; font-weight:bold; display: none !important;">[-]</button>
+            </div>
+
+            <div class="panel-inner-content">
+                
+                <div id="system-status-bar" style="display: none; background-color: #e8f4f8; color: #006e82; padding: 8px 11px; border-left: 4px solid #008fa0; margin-bottom: 15px; font-weight: bold; font-size: var(--font-md);">
+                    <span class="spinner" style="margin-right: 8px;">⏳</span> <span id="status-text">Initializing RAG pipeline...</span>
+                </div>
+                <div id="ebm-results-section" style="display: none; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; background-color: #fafafa; margin-bottom: 22px;">
+                    <div style="display: flex; background-color: #fff; padding: 15px; border-bottom: 1px solid #ddd; align-items: center;">
+                        <div id="traffic-light-indicator" style="width: 18px; height: 18px; border-radius: 50%; background-color: #ccc; margin-right: 11px;"></div>
+                        <div style="flex-grow: 1;">
+                            <h3 id="result-dx-tx" style="margin: 0; color: #333; font-size: 15px;">Awaiting Synthesis...</h3>
+                        </div>
+                    </div>
+                    <div style="padding: 15px;"><p id="llm-reasoning-text" style="line-height: 1.6; color: #444; min-height: 45px; font-size: var(--font-md);"></p></div>
+                </div>
+
+                <div id="specialties-dashboard" class="specialties-dashboard">
+                    <h2 style="font-size: 24px; color: #333; margin-top: 5px; margin-bottom: 15px;">Specialties</h2>
+                    
+                    <div class="specialties-grid" id="specialties-grid-container">
+                        <div style="text-align:center; padding: 40px; color: #999;">Loading specialties database...</div>
+                    </div>
+                </div>
+
+                <div id="specialty-detail-view" style="display: none;">
+                    
+                    <div class="content-header" style="border-bottom:2px solid #ddd; padding-bottom:5px; margin-bottom:10px; margin-top: 5px;">
+                        <div style="width: 100%;">
+                            <div id="dynamic-breadcrumb" style="font-size: 14px; color: #666; margin-bottom: 6px;">
+                                <a href="#" class="bread-link" data-level="0" style="color: #006e82; text-decoration: none; font-weight: bold;">Specialties</a>
+                                <span id="bread-trail"></span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+                                <h2 id="detail-topic-title" style="margin: 0; font-size: 28px; color: #333;">Loading...</h2>
+                                <div class="specialty-follow" style="font-size: var(--font-md);">Follow</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="specialty-tree-container" id="specialty-tree-container">
+                    </div>
+                </div>
+
+            </div>
+        </main>
+        
+        <div class="resizer" id="resizer-right" style="display: none;"></div>
+        <aside class="chat-panel split-panel" id="panel-right" style="display: none; width: 0;"></aside>
+    </div>
+
+    <footer style="text-align: center; padding: 15px; font-size: var(--font-xs); color: #777; border-top: 1px solid #ddd; margin-top: 30px;">
+        <p>Copyright © 2026 RootMedicals-EBMDx. All Rights Reserved.</p>
+    </footer>
+
+    <button id="medpilot-fab" class="btn-fab" title="Open Medpilot">💬 Medpilot</button>
+    <div id="llm_qa_window" class="floating-widget">
+        <div class="chat-header drag-handle" id="chat-widget-header">
+            <h3 style="margin: 0; font-size: 12px; white-space: nowrap;">Medpilot / llm_qa_window</h3>
+            <button id="btn-close-widget" style="cursor:pointer; background:none; border:none; color:white; font-weight:bold; font-size: 14px;">×</button>
+        </div>
+        <div class="chat-history" id="chat-history-float">
+            <div class="chat-msg system-msg" style="padding: 9px; font-size: var(--font-md);"><strong>System:</strong> I am connected to the EBM RAG knowledge base.</div>
+        </div>
+        <div class="chat-input-area" style="padding: 11px; background-color: #eee; border-top: 1px solid #ddd;">
+            <textarea id="llm-chat-input-float" rows="2" style="width: 100%; box-sizing: border-box; font-size: var(--font-md); padding: 8px; resize: none;"></textarea>
+            <button id="btn-send-chat-float" style="width: 100%; margin-top: 8px; padding: 6px 11px; font-size: var(--font-md); background-color: #006e82; color: white; border: none; border-radius: 4px; cursor: pointer;">Send Query</button>
+        </div>
+    </div>
+
+    <script src="/static/js/stream_client.js"></script>
+    <script src="/static/js/panels_split.js"></script>
+    <script src="/static/js/app.js"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const dashboardView = document.getElementById('specialties-dashboard');
+            const detailView = document.getElementById('specialty-detail-view');
+            const gridContainer = document.getElementById('specialties-grid-container');
+            const treeContainer = document.getElementById('specialty-tree-container');
+            const detailTitle = document.getElementById('detail-topic-title');
+            const breadTrail = document.getElementById('bread-trail'); 
+
+            // 麵包屑超連結點擊事件監聽器
+            document.getElementById('dynamic-breadcrumb').addEventListener('click', (e) => {
+                if (e.target.classList.contains('bread-link')) {
+                    e.preventDefault();
+                    const level = e.target.getAttribute('data-level');
+                    const nodeId = e.target.getAttribute('data-id');
+                    
+                    if (level === "0") {
+                        dashboardView.style.display = 'block';
+                        detailView.style.display = 'none';
+                        
+                        // [v1.10 互動優化] 點擊回總表時，清空麵包屑尾巴
+                        breadTrail.innerHTML = '';
+                    } else if (nodeId === "root") {
+                        detailView.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    } else {
+                        const targetNode = document.getElementById(`tree-node-${nodeId}`);
+                        if (targetNode) {
+                            targetNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            const titleDiv = targetNode.querySelector('.tree-group-title') || targetNode.querySelector('.tree-node-title');
+                            if(titleDiv) {
+                                titleDiv.style.backgroundColor = '#e8f4f8';
+                                setTimeout(() => { titleDiv.style.backgroundColor = 'transparent'; }, 1500);
+                            }
+                        }
+                    }
+                }
+            });
+
+            try {
+                const res = await fetch('/api/v1/specialties');
+                const json = await res.json();
+                if (json.status === 'success') {
+                    gridContainer.innerHTML = ''; 
+                    json.data.forEach(sp => {
+                        const div = document.createElement('div');
+                        div.className = 'specialty-item';
+                        div.innerHTML = `<a class="specialty-link" data-name="${sp.name}">${sp.name}</a><span class="specialty-follow">Follow</span>`;
+                        gridContainer.appendChild(div);
+                    });
+
+                    document.querySelectorAll('.specialty-link').forEach(link => {
+                        link.addEventListener('click', async (e) => {
+                            const spName = e.target.getAttribute('data-name');
+                            await loadSpecialtyTree(spName);
+                        });
+                    });
+                }
+            } catch (err) {
+                console.error("Failed to load specialties:", err);
+            }
+
+            // 徹底廢除手刻的醜陋 ▶/▼ 與內聯樣式！
+            // 校正回歸：全面採用原生的 `.tree-group`, `.tree-group-title`, `.tree-item-list`, `.hidden`
+            function renderTreeLevel(nodes, container, currentPath = []) {
+                nodes.forEach(node => {
+                    const nodeDiv = document.createElement('div');
+                    const isGroup = node.children && node.children.length > 0;
+                    
+                    // 根據是否有子節點，決定要掛載的 CSS Class
+                    nodeDiv.className = isGroup ? 'tree-group' : 'tree-item-wrapper';
+                    nodeDiv.id = `tree-node-${node.id}`; 
+                    
+                    // 讓 3、4、5 層自動縮進，產生階層感
+                    if (node.layer > 2) {
+                        nodeDiv.style.marginLeft = "18px";
+                    }
+
+                    const title = document.createElement('div');
+                    // 原生奧義：掛上 tree-group-title 與 collapsed，原生 CSS 就會自動加上漂亮的箭頭與底線！
+                    title.className = isGroup ? 'tree-group-title collapsed' : 'tree-node-title';
+                    title.style.cursor = 'pointer'; 
+                    title.style.transition = "background-color 0.3s";
+                    
+                    // [v1.13 新增] 渲染極小化的階層式 UID
+                    const uidBadge = node.uid ? `<span style="font-size: 10px; color: #aaa; margin-left: 8px; font-family: monospace; border: 1px solid #eee; padding: 1px 4px; border-radius: 3px; background: #fff;">${node.uid}</span>` : '';
+
+                    if (isGroup) {
+                        title.innerHTML = `<span>${node.name}</span> ${uidBadge}`;
+                    } else {
+                        // 不再使用 a href，純文字顯示，並交由下方的 Event Listener 處理跳轉
+                        title.innerHTML = `• <span style="color:#0056b3; font-weight: 500;">${node.name}</span> ${uidBadge}`;
+                    }
+                    
+                    const myPath = [...currentPath, {id: node.id, name: node.name}];
+                    
+                    const childrenUl = document.createElement('ul');
+                    if (isGroup) {
+                        // 原生奧義：掛上 tree-item-list，自動繼承完美的清單排版與子層距！
+                        childrenUl.className = 'tree-item-list hidden'; 
+                        // 遞迴呼叫
+                        renderTreeLevel(node.children, childrenUl, myPath);
+                    }
+
+                    // 點擊互動引擎
+                    title.addEventListener('click', (e) => {
+                        e.preventDefault(); 
+                        e.stopPropagation();
+                        
+                        if(!isGroup) {
+                            // [v1.13 核心修復] 直接針對整個點擊區塊執行 window.location.href 跳轉
+                            window.location.href = `/topic/${encodeURIComponent(node.name)}`;
+                            return;
+                        }
+                        
+                        // 1. 動態更新上方麵包屑路徑
+                        breadTrail.innerHTML = '';
+                        myPath.forEach(item => {
+                            breadTrail.innerHTML += ` <span style="margin: 0 5px; color: #999;">&raquo;</span> <a href="#" class="bread-link" data-id="${item.id}" style="color: #006e82; text-decoration: none;">${item.name}</a>`;
+                        });
+                        
+                        // 2. 原生收合邏輯 (只切換 class，完全讓 CSS 接管動畫與顯示)
+                        childrenUl.classList.toggle('hidden');
+                        title.classList.toggle('collapsed');
+                    });
+                    
+                    nodeDiv.appendChild(title);
+                    if (isGroup) {
+                        nodeDiv.appendChild(childrenUl);
+                    }
+                    container.appendChild(nodeDiv);
+                });
+            }
+
+            async function loadSpecialtyTree(spName) {
+                try {
+                    dashboardView.style.display = 'none';
+                    detailView.style.display = 'block';
+                    detailTitle.textContent = spName;
+                    treeContainer.innerHTML = '<div style="color:#999;">Loading clinical pathways...</div>';
+                    
+                    // 初始化根節點麵包屑
+                    breadTrail.innerHTML = ` <span style="margin: 0 5px; color: #999;">&raquo;</span> <a href="#" class="bread-link" data-id="root" style="color: #006e82; text-decoration: none;">${spName}</a>`;
+
+                    const res = await fetch(`/api/v1/specialties/${encodeURIComponent(spName)}/tree`);
+                    if (!res.ok) throw new Error("No detailed data for this specialty yet.");
+                    const json = await res.json();
+
+                    if (json.status === 'success') {
+                        treeContainer.innerHTML = '';
+                        
+                        const rootPath = [{id: 'root', name: spName}];
+                        
+                        // 修復空陣列邏輯
+                        if (json.tree.length === 0) {
+                            treeContainer.innerHTML = '<div style="padding:15px; color:#666; font-style:italic;">No detailed layers configured for this specialty yet. Please use the Admin Taxonomy Builder to add sub-topics.</div>';
+                        } else if (json.tree[0].children !== undefined) {
+                            // 執行新版無損遞迴渲染
+                            renderTreeLevel(json.tree, treeContainer, rootPath);
+                        } else {
+                            // 絕對保留舊版渲染邏輯，一字不刪
+                            json.tree.forEach(group => {
+                                const groupDiv = document.createElement('div');
+                                groupDiv.className = 'tree-group';
+                                
+                                const groupTitle = document.createElement('div');
+                                groupTitle.className = 'tree-group-title';
+                                groupTitle.style.cursor = 'pointer';
+                                groupTitle.textContent = group.group_name;
+                                groupDiv.appendChild(groupTitle);
+
+                                const ul = document.createElement('ul');
+                                ul.className = 'tree-item-list';
+                                group.topics.forEach(topic => {
+                                    const li = document.createElement('li');
+                                    li.innerHTML = `<a href="#" class="tree-item-link">${topic.name}</a>`;
+                                    ul.appendChild(li);
+                                });
+                                groupDiv.appendChild(ul);
+                                
+                                groupTitle.addEventListener('click', () => {
+                                    ul.classList.toggle('hidden');
+                                    groupTitle.classList.toggle('collapsed');
+                                    breadTrail.innerHTML = ` <span style="margin: 0 5px; color: #999;">&raquo;</span> <a href="#" class="bread-link" data-id="root" style="color: #006e82; text-decoration: none;">${spName}</a> <span style="margin: 0 5px; color: #999;">&raquo;</span> <span style="color: #006e82;">${group.group_name}</span>`;
+                                });
+
+                                treeContainer.appendChild(groupDiv);
+                            });
+                        }
+                    }
+                } catch (err) {
+                    treeContainer.innerHTML = `<div style="color:red; font-size:var(--font-base);">System Notice: Detailed tree for <b>${spName}</b> is currently being ingested from the EBM pipeline.</div>`;
+                }
+            }
+        });
+    </script>
+</body>
+</html>

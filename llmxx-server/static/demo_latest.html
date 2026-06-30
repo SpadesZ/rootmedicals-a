@@ -1,0 +1,124 @@
+<!--
+  檔案路徑: rootmedicals-a/llmxx-server/static/demo_latest.html
+  產生時間: 2026-06-17 16:10 +08:00
+  版本: v0.7-交付整理
+  說明: llmxx-server 工程展示頁靜態資源，用於 /demo/latest 檢視最新 EBM 結果。
+  交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+  版本紀錄:
+  - v0.1: 新增單頁檢視器，顯示 clinical parse、EBM result、final gate、evidence table 與 event log。
+  - v0.2: 靜態資源加上版本 query string，避免 demo 時被瀏覽器快取卡住。
+  - v0.3: demo 控制改用原生連結，減少彈窗與 script 限制造成的操作失敗。
+  - v0.4: 改成按鈕加明確導頁 handler，修正 in-app browser click 驗證不穩定。
+  - v0.5: 改用原生 GET form，JavaScript 只補 session-specific Events form target。
+  - v0.6: 顯示 ICD-10 anchor 與 ICD gate 狀態。
+  - v0.7: 顯示 normalized ICD diagnosis 與原始 A 欄 dx_text。
+  安全筆記:
+  - 只顯示 server 最小化後的 response，不讀 raw OCR text、raw payload archive、截圖或 diagnostics wrapper。
+  驗證筆記:
+  - 已由 browser click checks 覆蓋 Refresh、Open JSON、Open Events、evidence rendering 與 empty-state rendering。
+  ----------------------------------------------------------------------------------------------------
+-->
+
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RootMedicals EBM Review Demo</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=0.4">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>RootMedicals EBM Review Demo</h1>
+      <p id="subtitle">Latest llmxx-server clinical review session</p>
+    </div>
+    <nav class="actions" aria-label="Demo actions">
+      <form action="/demo/latest" method="get">
+        <button id="refreshBtn" type="submit">Refresh</button>
+      </form>
+      <form action="/api/demo/latest" method="get">
+        <button id="jsonBtn" type="submit">Open JSON</button>
+      </form>
+      <form id="eventsForm" action="/api/demo/latest" method="get">
+        <button id="eventsBtn" type="submit">Open Events</button>
+      </form>
+    </nav>
+  </header>
+
+  <main class="layout">
+    <section class="panel session-panel">
+      <h2>Case Received</h2>
+      <dl class="kv">
+        <dt>Status</dt><dd id="statusValue">Loading</dd>
+        <dt>Session</dt><dd id="sessionValue">-</dd>
+        <dt>Client</dt><dd id="clientValue">-</dd>
+        <dt>Created</dt><dd id="createdValue">-</dd>
+      </dl>
+    </section>
+
+    <section class="panel parse-panel">
+      <h2>Clinical Parse</h2>
+      <dl class="kv">
+        <dt>Dx</dt><dd id="dxValue">-</dd>
+        <dt>ICD</dt><dd id="icdValue">-</dd>
+        <dt>A Text</dt><dd id="dxTextValue">-</dd>
+        <dt>Tx</dt><dd id="txValue">-</dd>
+        <dt>Hx</dt><dd id="hxValue">-</dd>
+        <dt>Confidence</dt><dd id="confidenceValue">-</dd>
+        <dt>Missing</dt><dd id="missingValue">-</dd>
+        <dt>Flags</dt><dd id="flagsValue">-</dd>
+      </dl>
+    </section>
+
+    <section class="panel ebm-panel">
+      <h2>EBM Result</h2>
+      <div id="lightBadge" class="light light-gray">not_evaluable</div>
+      <dl class="kv">
+        <dt>Final Gate</dt><dd id="gateReason">-</dd>
+        <dt>Evidence-backed</dt><dd id="evidenceBacked">-</dd>
+        <dt>Display Mode</dt><dd id="displayMode">-</dd>
+        <dt>Reason Codes</dt><dd id="reasonCodes">-</dd>
+        <dt>ICD Gate</dt><dd id="icdGate">-</dd>
+      </dl>
+    </section>
+
+    <section class="panel scores-panel">
+      <h2>Scores</h2>
+      <dl class="kv">
+        <dt>Semantic</dt><dd id="semanticScore">-</dd>
+        <dt>Support</dt><dd id="supportScore">-</dd>
+        <dt>Conflict</dt><dd id="conflictScore">-</dd>
+        <dt>Risk</dt><dd id="riskScore">-</dd>
+        <dt>Claim Verify</dt><dd id="claimVerify">-</dd>
+        <dt>Demo Verify</dt><dd id="demoVerify">-</dd>
+      </dl>
+    </section>
+
+    <section class="panel evidence-panel">
+      <h2>Evidence</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Comment</th>
+            <th>paper_id</th>
+            <th>chunk_id</th>
+            <th>PMID</th>
+            <th>DOI</th>
+          </tr>
+        </thead>
+        <tbody id="evidenceBody">
+          <tr><td colspan="5">Loading</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="panel events-panel">
+      <h2>Event Log</h2>
+      <ol id="eventList"></ol>
+    </section>
+  </main>
+
+  <script src="/static/js/app.js?v=0.6"></script>
+</body>
+</html>

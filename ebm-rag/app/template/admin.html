@@ -1,0 +1,789 @@
+<!--
+  檔案路徑: rootmedicals-a/ebm-rag/app/template/admin.html
+  產生時間: 2026-06-17 16:10 +08:00
+  版本: v0.1-交付整理
+  說明: RAG 管理介面 Jinja/HTML 模板。
+  交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+  ----------------------------------------------------------------------------------------------------
+-->
+
+<!--
+File Path: ebm-rag/app/template/admin.html
+Timestamp: 2026-06-15
+Version: v1.3
+Description: RAG Admin 管理工作台。新增 readiness panel、demo verifier fallback、paper deep link、literature search 與 browser-local system settings wiring。
+-->
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Admin - Management Center</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        /* ==========================================
+           全域變數與基礎設定
+           ========================================== */
+        :root { 
+            --admin-teal: #005b6e; 
+            --admin-bg: #f4f7f6; 
+            --danger-red: #dc2626; 
+            --success-green: #059669;
+            --border-light: #e5e7eb;
+        }
+
+        body { 
+            background: var(--admin-bg); 
+            margin: 0; 
+            font-family: 'Inter', -apple-system, sans-serif; 
+        }
+
+        /* ==========================================
+           頂部導覽列 (Navigation Bar)
+           ========================================== */
+        .admin-nav { 
+            background: #fff; 
+            padding: 0 40px; 
+            border-bottom: 1px solid #ddd; 
+            display: flex; 
+            gap: 30px; 
+        }
+
+        .nav-item { 
+            padding: 15px 0; 
+            cursor: pointer; 
+            color: #666; 
+            font-weight: bold; 
+            border-bottom: 3px solid transparent; 
+            transition: all 0.2s ease-in-out; 
+        }
+
+        .nav-item.active { 
+            color: var(--admin-teal); 
+            border-bottom-color: var(--admin-teal); 
+        }
+
+        /* ==========================================
+           主容器與分頁切換結構 (Main Container & Tabs)
+           ========================================== */
+        .admin-container { 
+            max-width: 1200px; /* 稍微放寬以適應左右雙視窗 */
+            margin: 30px auto; 
+            background: white; 
+            padding: 40px; 
+            border-radius: 10px; 
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08); 
+            min-height: 80vh; 
+        }
+
+        .tab-content { 
+            display: none; 
+        }
+
+        .tab-content.active { 
+            display: block; 
+        }
+        
+        /* ==========================================
+           生命週期管理表格 (Lifecycle Management Table)
+           ========================================== */
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin-top: 20px; 
+            font-size: 14px; 
+        }
+
+        th { 
+            background: #f9fafb; 
+            padding: 15px 12px; 
+            text-align: left; 
+            border-bottom: 2px solid #eee; 
+            color: #374151; 
+            font-weight: bold;
+        }
+
+        td { 
+            padding: 15px 12px; 
+            border-bottom: 1px solid #eee; 
+            vertical-align: middle; 
+        }
+
+        /* 物理刪除按鈕 */
+        .btn-del-mini { 
+            background: #fee2e2; 
+            color: var(--danger-red); 
+            border: 1px solid #fecaca; 
+            padding: 6px 12px; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .btn-del-mini:hover { 
+            background: var(--danger-red); 
+            color: white; 
+        }
+
+        /* ==========================================
+           Extraction Viewer 主畫布 (Viewer Canvas)
+           ========================================== */
+        .doc-canvas { 
+            background: #fff; 
+            border: 1px solid #eee; 
+            padding: 40px; 
+            border-radius: 6px; 
+            line-height: 1.6; 
+            margin-top: 30px;
+        }
+
+        .literature-search-panel {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 18px 20px;
+            margin-bottom: 20px;
+        }
+
+        .literature-search-panel h3 {
+            color: #1f2937;
+            font-size: 16px;
+            margin: 0 0 12px;
+        }
+
+        .literature-search-row {
+            display: flex;
+            gap: 12px;
+            align-items: stretch;
+        }
+
+        .literature-search-row input {
+            flex: 1;
+            min-width: 0;
+            padding: 12px;
+            border: 1px solid #cfd7df;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .literature-search-row button,
+        .literature-result-button {
+            background: var(--admin-teal);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .literature-search-row button {
+            padding: 0 24px;
+            min-width: 104px;
+        }
+
+        .literature-search-row button:disabled,
+        .literature-result-button:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .literature-search-results {
+            display: grid;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .literature-result {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 8px 14px;
+            align-items: center;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 12px;
+        }
+
+        .literature-result-title {
+            color: var(--admin-teal);
+            font-weight: 800;
+            overflow-wrap: anywhere;
+        }
+
+        .literature-result-meta,
+        .literature-result-match {
+            color: #4b5563;
+            font-size: 12px;
+            overflow-wrap: anywhere;
+        }
+
+        .literature-result-match {
+            grid-column: 1 / -1;
+        }
+
+        .literature-result-button {
+            padding: 9px 14px;
+            min-width: 74px;
+        }
+
+        /* 雙軌模式切換列 (Dual-Mode Switch) */
+        .viewer-mode-switch {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #eee;
+        }
+
+        .btn-mode {
+            background: #f3f4f6;
+            border: 1px solid #d1d5db;
+            color: #4b5563;
+            padding: 8px 18px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .btn-mode.active {
+            background: var(--admin-teal);
+            color: white;
+            border-color: var(--admin-teal);
+        }
+
+        /* 語意標題 */
+        .type-title { 
+            color: var(--admin-teal); 
+            font-size: 28px; 
+            border-bottom: 2px solid var(--admin-teal); 
+            margin-bottom: 20px; 
+            padding-bottom: 10px;
+        }
+
+        /* ==========================================
+           [核心新增] 左右雙視窗節點樣式 (Split Node Styling)
+           ========================================== */
+        .doc-node { 
+            margin-bottom: 40px; 
+            position: relative;
+            padding-top: 25px; /* 為頂部標籤留出空間 */
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            background: #fafafa;
+        }
+
+        /* 節點除錯標籤 (Debug Tag) 浮動於左上角 */
+        .node-tag {
+            position: absolute;
+            left: 10px;
+            top: -12px;
+            background: var(--admin-teal);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            z-index: 10;
+        }
+
+        /* 左右分割容器 */
+        .split-node-container {
+            display: flex;
+            width: 100%;
+            min-height: 150px;
+            box-sizing: border-box;
+        }
+
+        /* 左側：實體影像區 */
+        .split-left-pane {
+            flex: 1; /* 佔據 50% 空間 */
+            padding: 15px;
+            border-right: 1px dashed #ccc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #fff;
+            overflow: hidden; /* 防止影像撐破容器 */
+        }
+
+        .split-left-pane img {
+            max-width: 100%;
+            max-height: 400px;
+            object-fit: contain;
+            border: 1px solid #eee;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        /* 右側：可編輯文本區 */
+        .split-right-pane {
+            flex: 1; /* 佔據 50% 空間 */
+            display: flex;
+            flex-direction: column;
+            background: #fff;
+        }
+
+        /* 文本編輯器元件 (Textarea) */
+        .editable-textarea {
+            flex: 1;
+            width: 100%;
+            min-height: 150px;
+            padding: 15px;
+            border: none;
+            resize: vertical;
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            line-height: 1.6;
+            color: #1f2937;
+            background: transparent;
+            box-sizing: border-box;
+        }
+
+        .editable-textarea:focus {
+            outline: none;
+            background: #f0fdfa; /* 聚焦時給予微弱背景色提示 */
+        }
+
+        /* 編輯區底部工具列 */
+        .pane-toolbar {
+            display: flex;
+            justify-content: flex-end;
+            padding: 10px 15px;
+            background: #f9fafb;
+            border-top: 1px solid #eee;
+        }
+
+        /* 儲存修正按鈕 */
+        .btn-save-edit {
+            background: var(--success-green);
+            color: white;
+            border: none;
+            padding: 6px 15px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-save-edit:hover {
+            background: #047857;
+            transform: translateY(-1px);
+        }
+
+        /* ==========================================
+           Raw Data JSON 檢閱模式 (Raw JSON Mode)
+           ========================================== */
+        #raw-json-view {
+            background: #111827;
+            color: #10b981;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Fira Code', monospace;
+            font-size: 13px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            display: none; /* 預設為隱藏狀態 */
+            box-shadow: inset 0 2px 10px rgba(0,0,0,0.5);
+        }
+
+        /* ==========================================
+           全局防呆模態視窗 (Confirmation Modals)
+           ========================================== */
+        .modal-overlay { 
+            position: fixed; 
+            top: 0; left: 0; right: 0; bottom: 0; 
+            background: rgba(0,0,0,0.6); 
+            display: none; 
+            align-items: center; 
+            justify-content: center; 
+            z-index: 2000; 
+            backdrop-filter: blur(2px); 
+        }
+
+        .modal-content { 
+            background: white; 
+            padding: 30px; 
+            border-radius: 10px; 
+            width: 450px; 
+            box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2);
+        }
+
+        .rag-ops-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 24px;
+        }
+
+        .rag-panel {
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            padding: 20px;
+            background: #fff;
+        }
+
+        .rag-panel h3 {
+            margin: 0 0 14px;
+            color: #1f2937;
+            font-size: 16px;
+            border-bottom: 1px solid #eef2f7;
+            padding-bottom: 10px;
+        }
+
+        .rag-control-row {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+
+        .rag-control-row select,
+        .rag-control-row input,
+        .rag-control-row textarea {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-family: inherit;
+            box-sizing: border-box;
+        }
+
+        .rag-textarea {
+            width: 100%;
+            min-height: 95px;
+            padding: 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-family: 'Fira Code', Consolas, monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            box-sizing: border-box;
+            resize: vertical;
+            margin-bottom: 12px;
+        }
+
+        .rag-button {
+            background: var(--admin-teal);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+
+        .rag-button.secondary {
+            background: #374151;
+        }
+
+        .rag-button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+            opacity: 0.72;
+        }
+
+        .rag-status {
+            min-height: 18px;
+            color: #4b5563;
+            font-size: 12px;
+            margin: 8px 0;
+        }
+
+        .rag-json-box {
+            background: #111827;
+            color: #d1fae5;
+            padding: 16px;
+            border-radius: 8px;
+            font-family: 'Fira Code', Consolas, monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            overflow-x: auto;
+            max-height: 420px;
+        }
+
+        .rag-light {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+
+        .rag-light.green { background: #059669; }
+        .rag-light.yellow { background: #d97706; }
+        .rag-light.orange { background: #ea580c; }
+
+        .rag-health-row {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+            margin: 12px 0;
+        }
+
+        .rag-health-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 12px;
+            background: #f9fafb;
+        }
+
+        .rag-health-card strong {
+            display: block;
+            font-size: 12px;
+            color: #374151;
+            margin-bottom: 6px;
+        }
+
+        .rag-health-card span {
+            display: inline-block;
+            font-size: 11px;
+            font-weight: bold;
+            padding: 3px 8px;
+            border-radius: 999px;
+        }
+
+        .rag-health-ok { background: #d1fae5; color: #065f46; }
+        .rag-health-warn { background: #fef3c7; color: #92400e; }
+        .rag-health-bad { background: #fee2e2; color: #991b1b; }
+
+        .rag-summary-box {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            background: #f9fafb;
+            padding: 12px;
+            margin: 10px 0;
+            font-size: 12px;
+            color: #374151;
+        }
+
+        .rag-summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        .rag-summary-table th,
+        .rag-summary-table td {
+            border-bottom: 1px solid #e5e7eb;
+            padding: 8px;
+            text-align: left;
+            vertical-align: top;
+            font-size: 12px;
+        }
+
+        .rag-demo-toggle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #fde68a;
+            border-radius: 6px;
+            background: #fffbeb;
+            color: #78350f;
+            font-size: 12px;
+            font-weight: 700;
+            box-sizing: border-box;
+        }
+
+        .rag-demo-toggle input {
+            width: 16px;
+            height: 16px;
+            flex: 0 0 auto;
+        }
+
+        @media (max-width: 840px) {
+            .rag-health-row {
+                grid-template-columns: 1fr;
+            }
+            .rag-control-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .literature-search-row,
+            .literature-result {
+                grid-template-columns: 1fr;
+            }
+            .literature-search-row {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    
+    {% include '_header.html' %}
+
+    <nav class="admin-nav">
+        <div class="nav-item active" id="nav-viewer-tab">Extraction Viewer & Management</div>
+        <div class="nav-item" id="nav-rag-tab">RAG Operations</div>
+        <div class="nav-item" id="nav-system-tab">System Settings</div>
+    </nav>
+
+    <div class="admin-container">
+        
+        <div id="tab-viewer" class="tab-content active">
+            <h2 style="color: var(--admin-teal); margin-top: 0;">RAG Extraction Dashboard</h2>
+
+            <section class="literature-search-panel" aria-label="Literature Search">
+                <h3>Literature Search</h3>
+                <div class="literature-search-row">
+                    <input id="literature-search-input" type="search" placeholder="Search title, DOI, PMID, paper ID, guideline..." autocomplete="off">
+                    <button id="btn-literature-search" type="button">Search</button>
+                </div>
+                <div class="rag-status" id="literature-search-status"></div>
+                <div class="literature-search-results" id="literature-search-results"></div>
+            </section>
+            
+            <div style="display: flex; gap: 15px; margin-bottom: 30px; background: #f9fafb; padding: 20px; border-radius: 8px; border: 1px solid #eee;">
+                <select id="paper-select" style="flex: 1; padding: 12px; border-radius: 6px; border: 1px solid #ccc; font-family: monospace;">
+                    <option value="">-- Select Processed Paper ID --</option>
+                </select>
+                <button 
+                    style="background: var(--admin-teal); color: white; border: none; padding: 0 30px; border-radius: 6px; font-weight: bold; cursor: pointer;" 
+                    id="btn-load-details">
+                    Load Documents
+                </button>
+            </div>
+
+            <div id="doc-canvas" class="doc-canvas">
+                <h3 style="color: #4b5563; margin-top: 0; border-bottom: 2px solid #eee; padding-bottom: 15px;">Data Lifecycle Management</h3>
+                <p style="color: #6b7280; font-size: 13px;">Manage all extracted files here. Deleting a record will permanently purge all related data.</p>
+                
+                <table id="history-table">
+                    <thead>
+                        <tr>
+                            <th>Filename</th>
+                            <th>Paper ID</th>
+                            <th>Process Duration</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-tbody">
+                        </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="tab-system" class="tab-content">
+            <h2 style="color: var(--admin-teal); margin-top: 0;">System Global Settings</h2>
+            
+            <form id="admin-brand-form">
+                <label style="display:block; margin-bottom:10px; font-weight:bold; color: #374151;">Global Brand Name</label>
+                <input 
+                    type="text" 
+                    id="brand-name-input" 
+                    value="Rootmedicals-EBMRAG Center" 
+                    style="width:100%; padding:12px; margin-bottom:25px; border:1px solid #ccc; border-radius:6px; box-sizing: border-box;"
+                >
+                
+                <label style="display:block; margin-bottom:10px; font-weight:bold; color: #374151;">Upload Logo (Optional)</label>
+                <input type="file" id="brand-logo-input" accept="image/png,image/jpeg,image/svg+xml,image/webp" style="margin-bottom: 25px;">
+                
+                <div style="border-top: 1px solid #eee; padding-top: 20px;">
+                    <button type="submit" style="background:var(--admin-teal); color:white; border:none; padding:12px 30px; border-radius:6px; cursor:pointer; font-weight: bold;">Save Configuration</button>
+                </div>
+                <div class="rag-status" id="brand-save-status"></div>
+            </form>
+        </div>
+
+        <div id="tab-rag" class="tab-content">
+            <h2 style="color: var(--admin-teal); margin-top: 0;">RAG Operations</h2>
+
+            <div class="rag-ops-grid">
+                <section class="rag-panel">
+                    <h3>Readiness</h3>
+                    <div class="rag-control-row">
+                        <button class="rag-button secondary" id="btn-rag-refresh-readiness">Refresh</button>
+                        <div class="rag-status" id="rag-readiness-status">Not checked</div>
+                    </div>
+                    <div class="rag-health-row" id="rag-readiness-summary"></div>
+                    <pre class="rag-json-box" id="rag-readiness-output">{}</pre>
+                </section>
+
+                <section class="rag-panel">
+                    <h3>Knowledge Index</h3>
+                    <div class="rag-control-row">
+                        <select id="rag-paper-select">
+                            <option value="">-- Select Paper ID --</option>
+                        </select>
+                        <button class="rag-button" id="btn-rag-index">Index</button>
+                        <button class="rag-button secondary" id="btn-rag-load-chunks">View Chunks</button>
+                        <button class="rag-button secondary" id="btn-rag-quarantine-quality">Quarantine Failed Quality</button>
+                    </div>
+                    <label style="display:block; font-weight:bold; color:#374151; margin-bottom:6px;">external_meta JSON</label>
+                    <textarea class="rag-textarea" id="rag-index-metadata">{"specialty":"cardiology","disease":"atrial_fibrillation","six_s_level":"System","ocebm_level":"Level_1","grade_baseline":"Grade_A","source_type":"guideline","study_design":"clinical_practice_guideline","is_guideline":true,"guideline_title":"2023 ACC/AHA/ACCP/HRS Guideline for the Diagnosis and Management of Atrial Fibrillation","guideline_organization":"American College of Cardiology/American Heart Association/American College of Clinical Pharmacy/Heart Rhythm Society","guideline_year":2023,"publication_year":2024,"doi":"10.1016/j.jacc.2023.08.017","source_url":"https://doi.org/10.1016/j.jacc.2023.08.017","citation_text":"Joglar JA et al. 2023 ACC/AHA/ACCP/HRS guideline for the diagnosis and management of atrial fibrillation."}</textarea>
+                    <div class="rag-status" id="rag-index-status"></div>
+                    <pre class="rag-json-box" id="rag-chunks-output">{}</pre>
+                </section>
+
+                <section class="rag-panel">
+                    <h3>Query Tester</h3>
+                    <label style="display:block; font-weight:bold; color:#374151; margin-bottom:6px;">dx_summary</label>
+                    <textarea class="rag-textarea" id="query-dx-summary" placeholder="Example: Achilles tendinopathy treated with eccentric exercise"></textarea>
+
+                    <label style="display:block; font-weight:bold; color:#374151; margin-bottom:6px;">case_context JSON</label>
+                    <textarea class="rag-textarea" id="query-case-context">{"dx":"","tx":"","hx":"","calculators":[]}</textarea>
+
+                    <label style="display:block; font-weight:bold; color:#374151; margin-bottom:6px;">filters JSON</label>
+                    <textarea class="rag-textarea" id="query-filters">{"prefer_six_s_levels":["System","Summaries","Syntheses"],"min_ocebm":"Level_3"}</textarea>
+
+                    <div class="rag-control-row">
+                        <label style="font-weight:bold; color:#374151; min-width:210px;">query_decomposition_mode</label>
+                        <select id="query-decomposition-mode">
+                            <option value="deterministic" selected>deterministic</option>
+                            <option value="llm_assisted">llm_assisted</option>
+                        </select>
+                    </div>
+
+                    <div class="rag-control-row">
+                        <label class="rag-demo-toggle">
+                            <input type="checkbox" id="demo-synthetic-fallback">
+                            Demo-only synthetic fallback with verifier gate
+                        </label>
+                    </div>
+
+                    <button class="rag-button" id="btn-rag-query">Run Query</button>
+                    <div class="rag-status" id="rag-query-status"></div>
+                    <div class="rag-summary-box" id="rag-query-summary"></div>
+                    <pre class="rag-json-box" id="query-output">{}</pre>
+                </section>
+
+                <section class="rag-panel">
+                    <h3>Retrieval Log</h3>
+                    <div class="rag-control-row">
+                        <input id="retrieval-query-id" type="text" placeholder="query_id">
+                        <button class="rag-button" id="btn-load-retrieval">Load Log</button>
+                    </div>
+                    <div class="rag-status" id="retrieval-status"></div>
+                    <pre class="rag-json-box" id="retrieval-output">{}</pre>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="delete-modal">
+        <div class="modal-content">
+            <h3 style="color:var(--danger-red); margin-top: 0; border-bottom: 1px solid #fee2e2; padding-bottom: 15px;">Delete Forever?</h3>
+            <p style="color: #4b5563; line-height: 1.5;">This action will permanently purge all multi-modal extracted data (PNGs, JSONs, Layouts) for ID:</p>
+            
+            <div id="del-id-label" style="font-weight:bold; font-family: monospace; color: var(--admin-teal); background: #f3f4f6; padding: 10px; border-radius: 4px; text-align: center; margin: 15px 0;">
+                </div>
+            
+            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:25px;">
+                <button id="btn-delete-cancel" style="padding:10px 20px; border-radius:6px; border:1px solid #d1d5db; background:white; cursor: pointer; font-weight: 600;">Cancel</button>
+                <button id="btn-confirm-delete" style="padding:10px 20px; border-radius:6px; border:none; background:var(--danger-red); color:white; cursor: pointer; font-weight: 600;">Delete All</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/admin.js?v=20260615a"></script>
+</body>
+</html>

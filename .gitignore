@@ -1,0 +1,57 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Python/runtime caches
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.codegraph/
+venv/
+.venv/
+env/
+*.egg-info/
+
+# Runtime databases, logs, vectors, and process state
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+*.log
+*.out.log
+*.err.log
+*.pid
+data/
+**/data/
+ebm-rag/data/
+ebm-rag/rag_state.db
+runtime_reports/
+**/runtime/
+**/diagnostics/
+
+# Generated build/package output
+build/
+dist/
+*.spec~
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.whl
+
+# Runtime payload folders: keep placeholders, not payloads.
+shared_data/**/*.json
+!shared_data/icd10/icd10cm_master_demo.json
+!shared_data/**/.gitkeep
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

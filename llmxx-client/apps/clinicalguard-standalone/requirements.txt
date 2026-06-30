@@ -1,0 +1,9 @@
+# 檔案路徑: rootmedicals-a/llmxx-client/apps/clinicalguard-standalone/requirements.txt
+# 產生時間: 2026-06-17 16:10 +08:00
+# 版本: v0.1-交付整理
+# 說明: ClinicalGuard mock HIS，用於本機閉環 demo 的醫師端輸入介面。
+# 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+# ----------------------------------------------------------------------------------------------------
+
+reportlab>=4.0.0
+pyinstaller>=6.5.0

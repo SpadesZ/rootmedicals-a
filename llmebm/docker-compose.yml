@@ -1,0 +1,42 @@
+# 檔案路徑: rootmedicals-a/llmebm/docker-compose.yml
+# 產生時間: 2026-06-17 16:10 +08:00
+# 版本: v0.1-交付整理
+# 說明: llmebm 長期 EBM 知識層、taxonomy UI 或容器設定。
+# 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+# ----------------------------------------------------------------------------------------------------
+
+# 路徑: rootmedicals-a/llmebm/docker-compose.yml
+# 版本: v0.1
+# 更版時間: 2026-05-05 13:33
+# 說明: 
+#   1. llmebm 模組專屬的子系統 docker-compose 檔案。
+#   2. 獨立對外開放 33300 埠口，以便優先檢視 DynaMed Plus 風格前端 UI。
+#   3. 正確跨目錄掛載 shared_data 與 .env 環境變數，並掛載 app 目錄支援 UI 熱更新。
+# ----------------------------------------------------------------------------------------------------
+version: '3.8'
+
+services:
+  llmebm-standalone:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: rootmedicals_llmebm_ui
+    ports:
+      - "33300:8000"
+    volumes:
+      # 跨容器共用資料區
+      - ../shared_data:/shared_data
+      # 模組私有資料區
+      - ./data:/app/data
+      # 前端 UI 與後台邏輯即時掛載 (供開發階段熱重載檢視)
+      - ./app:/app/app
+      - ./main_ebm.py:/app/main_ebm.py
+    env_file:
+      - ../.env
+    restart: unless-stopped
+    networks:
+      - ebm_local_net
+
+networks:
+  ebm_local_net:
+    driver: bridge

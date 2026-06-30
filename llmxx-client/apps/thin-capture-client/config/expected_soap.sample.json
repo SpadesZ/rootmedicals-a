@@ -1,0 +1,10 @@
+{
+  "_version_history": [
+    "v0.1 20260614-0000: 建立 SOAP 驗證範例。",
+    "v0.2 20260614-0000: O 欄與獨立 Vital Signs 擷取保持一致。"
+  ],
+  "S": "headache for 3 days",
+  "O": "alert and oriented",
+  "A": "migraine suspected",
+  "P": "acetaminophen"
+}

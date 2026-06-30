@@ -1,0 +1,150 @@
+<!--
+  檔案路徑: rootmedicals-a/llmebm/app/templates/admin.html
+  產生時間: 2026-06-17 16:10 +08:00
+  版本: v0.1-交付整理
+  說明: llmebm 知識庫 UI 模板。
+  交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+  ----------------------------------------------------------------------------------------------------
+-->
+
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EBMDx - Admin Panel</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/admin.css">
+</head>
+<body>
+    {% include '_header.html' %}
+    <div class="admin-container-fluid">
+        <div class="admin-tabs">
+            <button class="tab-btn active" data-tab="tab-system">System Settings</button>
+            <button class="tab-btn" data-tab="tab-taxonomy">Taxonomy Builder</button>
+            <button class="tab-btn" data-tab="tab-sidebar-builder">Sidebar Topic Builder</button>
+        </div>
+
+        <div id="tab-system" class="tab-content active">
+            <h2 class="admin-title">System Settings</h2>
+            <div id="admin-status-msg" class="alert hidden"></div>
+            <form id="admin-brand-form">
+                <div class="form-group">
+                    <label for="brand-name-input">Global Brand Name</label>
+                    <input type="text" id="brand-name-input" value="RootMedicals Health" required>
+                </div>
+                <div class="form-group">
+                    <label for="brand-logo-input">Upload Brand Logo (PNG/JPG)</label>
+                    <input type="file" id="brand-logo-input" accept="image/png, image/jpeg">
+                    <img id="logo-preview" src="" alt="Logo Preview">
+                </div>
+                <div style="margin-top: 30px;">
+                    <button type="submit" class="btn-primary">Save Settings</button>
+                    <button type="button" id="btn-clear-brand" class="btn-secondary">Restore Defaults</button>
+                </div>
+            </form>
+        </div>
+
+        <div id="tab-taxonomy" class="tab-content">
+            <h2 class="admin-title">Knowledge Tree Management (5-Layer)</h2>
+            <p style="color: #666; margin-bottom: 25px;">Build your specialty trees here. Use the [+] buttons to manually add nodes, [✎] to edit names, and [🗑] to delete safely. Or use the CSV batch upload below.</p>
+            <div id="taxonomy-status-msg" class="alert hidden"></div>
+            
+            <div class="taxonomy-chain">
+                <div class="taxonomy-level">
+                    <div class="taxonomy-level-header"><h4>Layer 1 (Specialty)</h4><button id="btn-add-l1" class="btn-crud btn-add" title="Add Node">[+ Add]</button></div>
+                    <div class="select-action-group">
+                        <select id="select-layer-1"><option value="null">-- Loading --</option></select>
+                        <button id="btn-edit-l1" class="btn-crud btn-edit" title="Edit Name" disabled>[✎]</button>
+                        <button id="btn-del-l1" class="btn-crud btn-del" title="Delete Node" disabled>[🗑]</button>
+                    </div>
+                </div>
+                <div class="taxonomy-level">
+                    <div class="taxonomy-level-header"><h4>Layer 2</h4><button id="btn-add-l2" class="btn-crud btn-add" title="Add Node" disabled>[+ Add]</button></div>
+                    <div class="select-action-group">
+                        <select id="select-layer-2" disabled><option value="null">-- Waiting for previous layer --</option></select>
+                        <button id="btn-edit-l2" class="btn-crud btn-edit" title="Edit Name" disabled>[✎]</button>
+                        <button id="btn-del-l2" class="btn-crud btn-del" title="Delete Node" disabled>[🗑]</button>
+                    </div>
+                </div>
+                <div class="taxonomy-level">
+                    <div class="taxonomy-level-header"><h4>Layer 3</h4><button id="btn-add-l3" class="btn-crud btn-add" title="Add Node" disabled>[+ Add]</button></div>
+                    <div class="select-action-group">
+                        <select id="select-layer-3" disabled><option value="null">-- Waiting for previous layer --</option></select>
+                        <button id="btn-edit-l3" class="btn-crud btn-edit" title="Edit Name" disabled>[✎]</button>
+                        <button id="btn-del-l3" class="btn-crud btn-del" title="Delete Node" disabled>[🗑]</button>
+                    </div>
+                </div>
+                <div class="taxonomy-level">
+                    <div class="taxonomy-level-header"><h4>Layer 4</h4><button id="btn-add-l4" class="btn-crud btn-add" title="Add Node" disabled>[+ Add]</button></div>
+                    <div class="select-action-group">
+                        <select id="select-layer-4" disabled><option value="null">-- Waiting for previous layer --</option></select>
+                        <button id="btn-edit-l4" class="btn-crud btn-edit" title="Edit Name" disabled>[✎]</button>
+                        <button id="btn-del-l4" class="btn-crud btn-del" title="Delete Node" disabled>[🗑]</button>
+                    </div>
+                </div>
+                <div class="taxonomy-level">
+                    <div class="taxonomy-level-header"><h4>Layer 5</h4><button id="btn-add-l5" class="btn-crud btn-add" title="Add Node" disabled>[+ Add]</button></div>
+                    <div class="select-action-group">
+                        <select id="select-layer-5" disabled><option value="null">-- Waiting for previous layer --</option></select>
+                        <button id="btn-edit-l5" class="btn-crud btn-edit" title="Edit Name" disabled>[✎]</button>
+                        <button id="btn-del-l5" class="btn-crud btn-del" title="Delete Node" disabled>[🗑]</button>
+                    </div>
+                </div>
+
+                <div class="upload-block-grid-item">
+                    <h3 style="margin-top: 0; color: #006e82; font-size: 16px;">CSV Batch Import Target</h3>
+                    <div class="breadcrumb-hint" id="upload-breadcrumb">準備建立 <strong>Layer 1</strong> 節點<br>所屬父節點：<strong>[System Root]</strong></div>
+                    <form id="admin-taxonomy-form" style="margin-top: 15px;">
+                        <input type="hidden" id="target-parent-id" value="null">
+                        <input type="file" id="csv-file-input" accept=".csv" required style="margin-bottom: 10px; width: 100%;">
+                        <button type="submit" class="btn-primary" style="width: 100%; background: #f39c12;">Upload & Build Tree</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-sidebar-builder" class="tab-content">
+            <h2 class="admin-title">Sidebar Topic Builder</h2>
+            <p style="color: #666; margin-bottom: 25px;">Select a leaf node from the taxonomy on the left to configure its specialized sidebar on the right.</p>
+            <div id="sidebar-status-msg" class="alert hidden"></div>
+
+            <div style="display: flex; gap: 20px; height: 60vh;">
+                <div style="flex: 1; border: 1px solid #ccc; overflow-y: auto; padding: 15px; background: #fafafa; border-radius: 6px;">
+                    <h4 style="color: #006e82; margin-top: 0;">1. Select Topic (Taxonomy)</h4>
+                    <select id="sb-specialty-select" style="width: 100%; padding: 8px; margin-bottom: 15px;">
+                        <option value="">-- Choose Specialty --</option>
+                    </select>
+                    <div id="sb-taxonomy-tree" style="font-size: 14px;">Select a specialty above to load tree.</div>
+                </div>
+
+                <div style="flex: 2; border: 1px solid #ccc; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; background: #fff; border-radius: 6px;">
+                    <h4 style="margin-top: 0; color: #006e82;">2. Configure Sidebar for: <span id="sb-current-topic" style="color: #f39c12;">None</span></h4>
+                    
+                    <div style="display: flex; gap: 10px; margin-bottom: 25px; background: #e8f4f8; padding: 15px; border-radius: 6px; align-items: center;">
+                        <select id="sb-parent-select" style="flex: 1; padding: 8px;" disabled>
+                            <option value="null">-- Select Topic First --</option>
+                        </select>
+                        <input type="text" id="sb-node-name" placeholder="Enter node name..." style="flex: 2; padding: 8px;" disabled>
+                        <button id="sb-btn-add" class="btn-primary" style="padding: 8px 15px;" disabled>+ Add Node</button>
+                    </div>
+
+                    <div style="display: flex; gap: 40px;">
+                        <div style="flex: 1;">
+                            <h5 style="color: #666; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Universal Template (Read-Only)</h5>
+                            <div id="sb-universal-tree" style="opacity: 0.7; pointer-events: none; font-size: 13px;"></div>
+                        </div>
+                        
+                        <div style="flex: 1;">
+                            <h5 style="color: #006e82; border-bottom: 1px solid #006e82; padding-bottom: 5px;">Specialized Features (Layer 1-3)</h5>
+                            <div id="sb-custom-tree" style="font-size: 13px; color: #333;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

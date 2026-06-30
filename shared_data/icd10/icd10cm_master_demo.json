@@ -1,0 +1,65 @@
+[
+  {
+    "code": "J30.9",
+    "label": "Allergic rhinitis, unspecified",
+    "normalized_diagnosis": "allergic rhinitis",
+    "aliases": ["rhinitis", "hay fever", "nasal allergy", "allergic rhinitis"],
+    "source": "ICD-10-CM demo seed",
+    "year": 2026,
+    "billable": true
+  },
+  {
+    "code": "I48.91",
+    "label": "Unspecified atrial fibrillation",
+    "normalized_diagnosis": "atrial fibrillation",
+    "aliases": ["atrial fibrillation", "afib", "a fib", "AF"],
+    "source": "ICD-10-CM demo seed",
+    "year": 2026,
+    "billable": true
+  },
+  {
+    "code": "E11.9",
+    "label": "Type 2 diabetes mellitus without complications",
+    "normalized_diagnosis": "type 2 diabetes mellitus",
+    "aliases": ["type 2 diabetes", "diabetes mellitus", "dm2", "t2dm"],
+    "source": "ICD-10-CM demo seed",
+    "year": 2026,
+    "billable": true
+  },
+  {
+    "code": "G43.909",
+    "label": "Migraine, unspecified, not intractable, without status migrainosus",
+    "normalized_diagnosis": "migraine",
+    "aliases": ["migraine", "migraine headache"],
+    "source": "ICD-10-CM demo seed",
+    "year": 2026,
+    "billable": true
+  },
+  {
+    "code": "J20.9",
+    "label": "Acute bronchitis, unspecified",
+    "normalized_diagnosis": "acute bronchitis",
+    "aliases": ["acute bronchitis", "bronchitis"],
+    "source": "ICD-10-CM demo seed",
+    "year": 2026,
+    "billable": true
+  },
+  {
+    "code": "K52.9",
+    "label": "Noninfective gastroenteritis and colitis, unspecified",
+    "normalized_diagnosis": "gastroenteritis",
+    "aliases": ["gastroenteritis", "colitis"],
+    "source": "ICD-10-CM demo seed",
+    "year": 2026,
+    "billable": true
+  },
+  {
+    "code": "M76.60",
+    "label": "Achilles tendinitis, unspecified leg",
+    "normalized_diagnosis": "achilles tendinitis",
+    "aliases": ["achilles tendinitis", "achilles tendinopathy"],
+    "source": "ICD-10-CM demo seed",
+    "year": 2026,
+    "billable": true
+  }
+]

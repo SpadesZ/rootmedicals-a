@@ -1,0 +1,472 @@
+<!--
+  檔案路徑: rootmedicals-a/ebm-rag/app/template/index.html
+  產生時間: 2026-06-17 16:10 +08:00
+  版本: v0.1-交付整理
+  說明: RAG 管理介面 Jinja/HTML 模板。
+  交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+  ----------------------------------------------------------------------------------------------------
+-->
+
+<!--
+File Path: ebm-rag/app/template/index.html
+Timestamp: 2026-06-11
+Version: v0.1
+Description: Main RAG pipeline upload page with wired history-to-admin navigation.
+----------------------------------------------------------------------------------------------------
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RootMedicals - EBMRAG Center</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    
+    <style>
+        :root { 
+            --rag-primary: #005b6e; 
+            --rag-dark: #333333; 
+            --rag-gray: #d1d5db; 
+            --rag-green: #059669; 
+            --rag-red: #dc2626;
+        }
+
+        body { 
+            font-family: 'Inter', -apple-system, sans-serif; 
+            background: #f3f4f6; 
+            margin: 0; 
+            padding: 0;
+            color: #1f2937; 
+            /* 字體縮小 30% 基準 */
+            font-size: 11px; 
+        }
+
+        .main-wrapper { 
+            max-width: 1100px; 
+            margin: 20px auto; 
+            padding: 0 20px; 
+        }
+
+        .rag-card { 
+            background: #fff; 
+            border-radius: 8px; 
+            box-shadow: 0 8px 20px rgba(0,0,0,0.05); 
+            margin-bottom: 15px; 
+            overflow: hidden; 
+            border: 1px solid #e5e7eb; 
+        }
+
+        .card-body { 
+            padding: 15px 20px; 
+        }
+
+        .section-label {
+            font-weight: 800; 
+            color: var(--rag-dark); 
+            margin-bottom: 10px; 
+            display: flex; 
+            align-items: center;
+            font-size: 12px;
+        }
+
+        .required-badge {
+            background: var(--rag-red); 
+            color: white; 
+            padding: 2px 6px; 
+            border-radius: 8px; 
+            font-size: 8px; 
+            margin-left: 8px;
+            letter-spacing: 0.5px;
+        }
+
+        /* 輸入控制群組 (高度壓縮 40%) 
+           整合 Choose File + Filename + Execution
+        */
+        .custom-upload-group { 
+            display: flex; 
+            border: 2px solid var(--rag-dark); 
+            border-radius: 4px; 
+            overflow: hidden; 
+            background: #fff;
+            align-items: stretch;
+        }
+
+        .btn-choose-file { 
+            background: #f9fafb; 
+            /* padding 極限壓縮 */
+            padding: 4px 12px; 
+            border-right: 2px solid var(--rag-dark); 
+            cursor: pointer; 
+            font-weight: 700; 
+            color: #4b5563;
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+        }
+
+        .filename-display { 
+            flex: 1; 
+            /* padding 極限壓縮 */
+            padding: 4px 12px; 
+            color: #6b7280; 
+            font-style: italic; 
+            font-family: monospace; 
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+        }
+
+        /* 內嵌式 Execution 按鈕 
+           移入 custom-upload-group 末端 
+        */
+        .btn-execute-inline {
+            background: var(--rag-primary); 
+            color: white; 
+            border: none; 
+            border-left: 2px solid var(--rag-dark);
+            /* padding 極限壓縮 */
+            padding: 4px 16px; 
+            cursor: pointer; 
+            font-weight: 800; 
+            font-size: 10px;
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+            transition: background 0.2s ease;
+            margin: 0;
+            border-radius: 0;
+        }
+
+        .btn-execute-inline:hover {
+            background: #004d5c;
+        }
+
+        .btn-execute-inline:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+
+        .btn-execute-inline svg {
+            width: 12px;
+            height: 12px;
+            margin-left: 6px;
+            fill: white;
+        }
+
+        .support-hint {
+            font-size: 9px;
+            color: #9ca3af;
+            margin-top: 6px;
+            margin-bottom: 15px;
+        }
+        
+        /* 歷史區塊 */
+        .history-section { 
+            margin-top: 15px;
+            padding: 5px; 
+            background: #f9fafb;
+            border-radius: 6px;
+            border: 2.5px solid var(--rag-dark); 
+        }
+
+        .history-header-mini { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            padding: 4px 8px; 
+            border-bottom: 1.5px solid #e5e7eb; 
+            margin-bottom: 6px; 
+        }
+
+        .history-title-text {
+            font-size: 9px; 
+            font-weight: 900; 
+            color: var(--rag-dark);
+            letter-spacing: 0.5px;
+        }
+
+        #history-container {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .status-strip { 
+            display: flex; 
+            align-items: center; 
+            background: #fff; 
+            padding: 4px 8px; 
+            border: 1px solid #e5e7eb; 
+            border-radius: 4px; 
+            font-size: 10px; 
+        }
+
+        .strip-item { 
+            overflow: hidden; 
+            text-overflow: ellipsis; 
+            white-space: nowrap; 
+            padding: 0 4px;
+        }
+
+        .badge-status { 
+            padding: 2px 6px; 
+            border-radius: 3px; 
+            color: white; 
+            font-weight: 800; 
+            font-size: 8px; 
+            letter-spacing: 0.5px;
+            display: inline-block;
+            text-align: center;
+        }
+
+        .btn-history-execution {
+            width: 22px;
+            height: 22px;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            background: #ffffff;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            padding: 0;
+            flex: 0 0 auto;
+        }
+
+        .btn-history-execution:hover {
+            background: #f0fdfa;
+            border-color: var(--rag-primary);
+        }
+
+        .btn-history-execution svg {
+            width: 13px;
+            height: 13px;
+            fill: var(--rag-primary);
+        }
+        
+        #history-container.minimized .status-strip:nth-child(n+2) { 
+            display: none; 
+        }
+        
+        .btn-mini-tool { 
+            background: #fff; 
+            border: 1px solid #d1d5db; 
+            border-radius: 4px; 
+            font-size: 8px; 
+            font-weight: bold;
+            cursor: pointer; 
+            color: #4b5563; 
+            padding: 2px 6px; 
+            transition: background 0.2s;
+        }
+
+        .btn-mini-tool:hover {
+            background: #f3f4f6;
+        }
+
+        /* 燈號管線 */
+        .pipeline-status { 
+            display: flex; 
+            justify-content: space-between; 
+            margin: 15px 0; 
+            padding: 0 30px; 
+            position: relative; 
+        }
+
+        .pipeline-status::before { 
+            content: ''; 
+            position: absolute; 
+            top: 14px; 
+            left: 60px; 
+            right: 60px; 
+            height: 3px; 
+            background: #e5e7eb; 
+            z-index: 1; 
+        }
+
+        .step { 
+            z-index: 2; 
+            width: 80px; 
+            text-align: center; 
+        }
+
+        .step-dot { 
+            width: 30px; 
+            height: 30px; 
+            background: #fff; 
+            border: 3px solid #e5e7eb; 
+            border-radius: 50%; 
+            margin: 0 auto 6px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            font-weight: 900; 
+            color: #9ca3af; 
+            transition: all 0.3s ease; 
+            font-size: 11px;
+        }
+
+        .step.active .step-dot { 
+            border-color: var(--rag-primary); 
+            background: var(--rag-primary); 
+            color: white; 
+            transform: scale(1.15); 
+            box-shadow: 0 0 0 4px var(--rag-light);
+        }
+
+        .step-label {
+            font-size: 9px;
+            font-weight: 800;
+            color: #6b7280;
+        }
+
+        /* 日誌主控台 */
+        #log-console {
+            background: #111827;
+            color: #10b981;
+            padding: 12px;
+            border-radius: 6px;
+            font-family: 'Fira Code', monospace;
+            font-size: 10px;
+            height: 100px;
+            overflow-y: auto;
+            box-shadow: inset 0 2px 8px rgba(0,0,0,0.5);
+            margin-top: 15px;
+        }
+
+        /* Modal 確認視窗 */
+        .modal-overlay { 
+            position: fixed; 
+            top: 0; left: 0; right: 0; bottom: 0; 
+            background: rgba(17, 24, 39, 0.75); 
+            display: none; 
+            align-items: center; 
+            justify-content: center; 
+            z-index: 1000; 
+            backdrop-filter: blur(4px); 
+        }
+
+        .modal-content { 
+            background: #fff; 
+            width: 400px; 
+            padding: 25px; 
+            border-radius: 8px; 
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
+
+        .modal-title {
+            margin-top: 0;
+            color: var(--rag-dark);
+            font-size: 15px;
+            border-bottom: 2px solid #f3f4f6;
+            padding-bottom: 10px;
+        }
+
+        .modal-actions {
+            display: flex; 
+            justify-content: flex-end; 
+            gap: 10px; 
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    
+    {% include '_header.html' %}
+
+    <div class="main-wrapper">
+        <div style="margin-bottom:12px;text-align:right">
+          <a href="/lava" style="background:#005b6e;color:#fff;padding:6px 14px;border-radius:6px;font-size:12px;text-decoration:none;font-weight:600">⚡ LAVA Setup</a>
+          <a href="/admin" style="background:#6b7280;color:#fff;padding:6px 14px;border-radius:6px;font-size:12px;text-decoration:none;font-weight:600;margin-left:8px">Admin</a>
+        </div>
+        <div class="rag-card">
+            <div class="card-body">
+                
+                <div class="section-label">
+                    Medicine Journal Document 
+                    <span class="required-badge">REQUIRED</span>
+                </div>
+                
+                <div class="custom-upload-group">
+                    <div class="btn-choose-file" id="btn-trigger-file">Choose File</div>
+                    <div class="filename-display" id="filename-text">No file chosen</div>
+                    <button class="btn-execute-inline" id="btn-execute">
+                        EXECUTION
+                        <svg viewBox="0 0 24 24">
+                            <path d="M8,5.14V19.14L19,12.14L8,5.14Z" />
+                        </svg>
+                    </button>
+                    <input type="file" id="file-input" style="display: none;" accept="application/pdf">
+                </div>
+
+                <div class="support-hint">Supported file types: .pdf</div>
+
+                <div class="history-section">
+                    <div class="history-header-mini">
+                        <span class="history-title-text">CAPTURED FILES HISTORY</span>
+                        <div>
+                            <button id="btn-toggle-view" class="btn-mini-tool">MINIMIZE</button>
+                            <button id="btn-refresh" class="btn-mini-tool" style="margin-left:6px;">REFRESH</button>
+                        </div>
+                    </div>
+                    
+                    <div id="history-container">
+                        <div style="text-align:center; padding:10px; color:#9ca3af; font-size:10px; font-weight:bold;">
+                            Syncing with project lock...
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="rag-card">
+            <div class="card-body">
+                <div class="pipeline-status">
+                    <div class="step" id="step-rasterize">
+                        <div class="step-dot">1</div>
+                        <div class="step-label">RASTERIZE</div>
+                    </div>
+                    <div class="step" id="step-layout">
+                        <div class="step-dot">2</div>
+                        <div class="step-label">LAYOUT</div>
+                    </div>
+                    <div class="step" id="step-crop">
+                        <div class="step-dot">3</div>
+                        <div class="step-label">CROP</div>
+                    </div>
+                    <div class="step" id="step-recognize">
+                        <div class="step-dot">4</div>
+                        <div class="step-label">RECOGNIZE</div>
+                    </div>
+                    <div class="step" id="step-reconstruct">
+                        <div class="step-dot">5</div>
+                        <div class="step-label">RECONSTRUCT</div>
+                    </div>
+                </div>
+                
+                <div id="log-console">>> System initialized. Waiting for execution...</div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <div class="modal-overlay" id="confirm-modal">
+        <div class="modal-content">
+            <h3 class="modal-title">Confirm Extraction?</h3>
+            <p style="color: #4b5563; line-height: 1.6; font-size: 11px;">You are about to execute the RAG pipeline for:</p>
+            <div id="modal-filename" style="font-weight: bold; color: var(--rag-primary); padding: 8px; background: #f3f4f6; border-radius: 4px; word-break: break-all; font-size: 11px;"></div>
+            
+            <div class="modal-actions">
+                <button id="btn-modal-cancel" style="padding: 6px 15px; border: 1px solid #d1d5db; background: white; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 10px;">Cancel</button>
+                <button id="btn-modal-confirm" style="padding: 6px 15px; border: none; background: var(--rag-primary); color: white; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 10px;">Run Pipeline</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="current-pid-label" style="display:none;">Ready</div>
+    
+    <script src="/static/js/index.js?v=20260611a"></script>
+</body>
+</html>

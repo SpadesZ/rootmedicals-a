@@ -1,0 +1,20 @@
+# File Path: ebm-rag/.dockerignore
+# Timestamp: 2026-06-09
+# Version: v0.1
+# Description: Docker build context exclusions for EBM-RAG.
+#              Runtime data is mounted by docker-compose-rag.yml volumes instead of baked into the image.
+# ----------------------------------------------------------------------------------------------------
+
+__pycache__/
+*.pyc
+*.pyo
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+data/qdrant/storage/
+data/sys/database/
+data/working/process/
+data/test_fixtures/
+docker_build_rag.out.log
+docker_build_rag.err.log

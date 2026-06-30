@@ -1,0 +1,13 @@
+# 檔案路徑: rootmedicals-a/roothinx/Dockerfile
+# 產生時間: 2026-06-17 16:10 +08:00
+# 版本: v0.1-交付整理
+# 說明: roothinx 論文/文件生成模組。
+# 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+# ----------------------------------------------------------------------------------------------------
+
+FROM python:3.10-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+CMD ["uvicorn", "paper_generator:app", "--host", "0.0.0.0", "--port", "8000"]

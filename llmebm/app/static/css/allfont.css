@@ -1,0 +1,156 @@
+/*
+ * 檔案路徑: rootmedicals-a/llmebm/app/static/css/allfont.css
+ * 產生時間: 2026-06-17 16:10 +08:00
+ * 版本: v0.1-交付整理
+ * 說明: llmebm 知識庫 UI 靜態資源。
+ * 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+ * ----------------------------------------------------------------------------------------------------
+ */
+
+/*
+# 路徑: rootmedicals-a/llmebm/app/static/css/allfont.css
+# 版本: v0.1
+# 更版時間: 2026-05-05 18:15
+# 說明: 
+#   1. 獨立的字體等比例縮放與 Admin 後台管理專屬樣式表。
+#   2. 符合無障礙設計規範 (Accessibility)。
+# ----------------------------------------------------------------------------------------------------
+*/
+
+/* 字體控制按鈕樣式 */
+.font-control-group {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+}
+
+.font-btn {
+    background-color: transparent;
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    border-radius: 3px;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.font-btn:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+    border-color: white;
+}
+
+.font-btn:active {
+    transform: scale(0.95);
+}
+
+/* Admin 後台版面配置 */
+.admin-container {
+    max-width: 600px;
+    margin: 50px auto;
+    padding: 20px;
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+.admin-container h2 {
+    color: var(--theme-dark-green, #006e82);
+    margin-bottom: 5px;
+    border-bottom: 2px solid var(--btn-orange, #f39c12);
+    padding-bottom: 10px;
+}
+
+.admin-subtitle {
+    color: #666;
+    font-size: 14px;
+    margin-bottom: 30px;
+}
+
+.admin-card {
+    background: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 25px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 8px;
+    color: #333;
+}
+
+.form-group input[type="text"] {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+.form-group input[type="file"] {
+    display: block;
+    font-size: 14px;
+}
+
+.preview-area {
+    margin-top: 15px;
+    padding: 10px;
+    background: #fff;
+    border: 1px dashed #ccc;
+    border-radius: 4px;
+    text-align: center;
+    min-height: 60px;
+}
+
+.form-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 30px;
+}
+
+.btn-save {
+    background-color: var(--theme-dark-green, #006e82);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.btn-save:hover {
+    background-color: #005a6b;
+}
+
+.btn-reset {
+    background-color: #e74c3c;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.btn-reset:hover {
+    background-color: #c0392b;
+}
+
+.status-msg {
+    margin-top: 15px;
+    padding: 10px;
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+    border-radius: 4px;
+    text-align: center;
+}
+
+.hidden {
+    display: none !important;
+}

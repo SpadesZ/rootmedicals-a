@@ -1,0 +1,10 @@
+# Path: ./llmxx-client-local-ocr/.gitignore
+# Version History:
+# v0.1 20260614-0000 - Ignore generated Python caches, local virtualenvs, and temporary runtime files.
+# v0.2 20260614-0000 - Ignore editable-install metadata generated under src.
+
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/

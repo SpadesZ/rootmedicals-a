@@ -1,0 +1,23 @@
+# 檔案路徑: rootmedicals-a/llmebm/requirements.txt
+# 產生時間: 2026-06-17 16:10 +08:00
+# 版本: v0.1-交付整理
+# 說明: llmebm 長期 EBM 知識層、taxonomy UI 或容器設定。
+# 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+# ----------------------------------------------------------------------------------------------------
+
+# 路徑: rootmedicals-a/llmebm/requirements.txt
+# 版本: v0.1
+# 更版時間: 2026-05-07 18:00
+# 說明: 
+#   1. 嚴格遵守第二定律：完整保留系統運行 FastAPI 與 Uvicorn 伺服器的核心依賴。
+#   2. 確保 Jinja2 (模板引擎) 與 pydantic (資料驗證模型) 的依賴完整性。
+#   3. [擴充] 新增 python-multipart，解決 fastapi.Form 與 UploadFile 導致的系統崩潰問題。
+# ----------------------------------------------------------------------------------------------------
+
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+jinja2>=3.1.2
+pydantic>=2.0.0
+
+# [新增擴充] 支援 Admin Taxonomy Builder 的 CSV 檔案上傳與表單資料解析
+python-multipart>=0.0.6

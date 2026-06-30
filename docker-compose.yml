@@ -1,0 +1,39 @@
+# 檔案路徑: rootmedicals-a/docker-compose.yml
+# 產生時間: 2026-06-17 16:10 +08:00
+# 版本: v0.1-交付整理
+# 說明: RootMedicals-A 根目錄交付入口或總覽設定。
+# 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+# ----------------------------------------------------------------------------------------------------
+
+version: '3.8'
+
+services:
+  llmxx-server:
+    build: ./llmxx-server
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./shared_data:/shared_data
+      - ./llmxx-server/data:/app/data
+    env_file:
+      - .env
+
+  llmebm:
+    build: ./llmebm
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./shared_data:/shared_data
+      - ./llmebm/data:/app/data
+    env_file:
+      - .env
+
+  roothinx:
+    build: ./roothinx
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./shared_data:/shared_data
+      - ./roothinx/data:/app/data
+    env_file:
+      - .env

@@ -1,0 +1,43 @@
+<!--
+  檔案路徑: rootmedicals-a/llmebm/app/templates/search.html
+  產生時間: 2026-06-17 16:10 +08:00
+  版本: v0.1-交付整理
+  說明: llmebm 知識庫 UI 模板。
+  交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+  ----------------------------------------------------------------------------------------------------
+-->
+
+<!-- 
+# 路徑: rootmedicals-a/llmebm/app/templates/search.html
+# 版本: v0.1
+# 更版時間: 2026-05-05 17:35
+# 說明: 
+#   1. 獨立抽離的全局搜尋區塊 (Partial Template)。
+#   2. 系統識別與 Placeholder 提示文字已全面升級為 RootMedicals-EBMDx。
+#   3. 內建自動補全下拉選單框架。
+# ----------------------------------------------------------------------------------------------------
+-->
+<div class="search-header">
+    <div class="search-logo-container">
+        <!-- 系統標題更替 -->
+        <h1 class="main-logo">RootMedicals-EBMDx</h1>
+    </div>
+    <div class="search-box-container">
+        <div class="input-wrapper">
+            <!-- 提示文字更替 -->
+            <input type="text" id="global-search-input" placeholder="Search RootMedicals-EBMDx..." autocomplete="off">
+            <!-- 自動補全下拉選單 (供前端 JS 動態寫入) -->
+            <div id="autocomplete-dropdown" class="dropdown-content hidden">
+                <div class="dropdown-section">
+                    <div class="section-label">Go To</div>
+                    <ul id="goto-list" class="suggestion-list"></ul>
+                </div>
+                <div class="dropdown-section">
+                    <div class="section-label">Search For</div>
+                    <ul id="searchfor-list" class="suggestion-list"></ul>
+                </div>
+            </div>
+        </div>
+        <button id="global-search-btn" class="btn-search">Search</button>
+    </div>
+</div>

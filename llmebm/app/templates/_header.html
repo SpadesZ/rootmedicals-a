@@ -1,0 +1,58 @@
+<!--
+  檔案路徑: rootmedicals-a/llmebm/app/templates/_header.html
+  產生時間: 2026-06-17 16:10 +08:00
+  版本: v0.1-交付整理
+  說明: llmebm 知識庫 UI 模板。
+  交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+  ----------------------------------------------------------------------------------------------------
+-->
+
+<!-- 
+# 路徑: rootmedicals-a/llmebm/app/templates/_header.html
+# 版本: v0.3
+# 更版時間: 2026-05-05 18:40
+# 說明: 
+#   1. 移除不必要之 Help 與 Remote Access 連結。
+#   2. 將字體控制群組 (A-/A/A+) 移至導覽列最右側。
+#   3. 新增垂直分隔線以優化版面視覺，並確保代碼行數增加。
+# ----------------------------------------------------------------------------------------------------
+-->
+<header class="top-bar">
+    
+    <!-- 導覽列左側：品牌與計算機入口 -->
+    <div class="top-bar-left" style="display: flex; align-items: center;">
+        
+        <!-- 動態引入切割出來的品牌區塊，已具備首頁跳轉功能 -->
+        {% include '_brand.html' %}
+        
+        <span class="top-link">Calculators</span>
+    
+    </div>
+    
+    <!-- 導覽列右側：關於、管理員與全域設定 -->
+    <div class="top-bar-right" style="display: flex; align-items: center;">
+        
+        <span class="top-link">&#8505; About</span>
+        
+        <!-- 系統管理員入口 (Admin) -->
+        <a 
+            href="/admin" 
+            class="top-link admin-link" 
+            title="System Settings" 
+            style="color: white; text-decoration: none; margin-left: 20px; font-weight: bold;"
+        >
+            &#9881; Admin
+        </a>
+
+        <!-- 視覺分隔線 -->
+        <div style="height: 20px; width: 1px; background-color: rgba(255,255,255,0.3); margin: 0 20px;"></div>
+        
+        <!-- 字體縮放控制區塊 (A-/A/A+) 移至最右側 -->
+        <div class="font-control-group">
+            <button id="btn-font-decrease" class="font-btn" title="縮小字體">A-</button>
+            <button id="btn-font-reset" class="font-btn" title="重設字體">A</button>
+            <button id="btn-font-increase" class="font-btn" title="放大字體">A+</button>
+        </div>
+
+    </div>
+</header>

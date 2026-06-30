@@ -1,0 +1,225 @@
+/*
+ * 檔案路徑: rootmedicals-a/llmxx-server/static/css/style.css
+ * 產生時間: 2026-06-17 16:10 +08:00
+ * 版本: v0.3-交付整理
+ * 說明: llmxx-server 工程展示頁靜態資源，用於 /demo/latest 檢視最新 EBM 結果。
+ * 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+ * 版本紀錄:
+ * - v0.1: 新增響應式版面、穩定燈號、evidence table 與可辨識的按鈕狀態。
+ * - v0.2: 補上原生 action-link 樣式，讓導頁在 JavaScript click handler 失效時仍可運作。
+ * - v0.3: 讓原生 action form 與 compact toolbar 視覺對齊。
+ * 安全筆記:
+ * - UI 刻意保持臨床工作站風格，只呈現最小化 evidence/result 資料，不放裝飾性干擾。
+ * 驗證筆記:
+ * - demo page 已用 browser visual/click checks 覆蓋主要畫面與操作。
+ * ----------------------------------------------------------------------------------------------------
+ */
+
+:root {
+  color-scheme: light;
+  --bg: #f5f7f8;
+  --panel: #ffffff;
+  --text: #111827;
+  --muted: #5c6670;
+  --line: #d8dee4;
+  --brand: #005e70;
+  --green: #157347;
+  --yellow: #a16207;
+  --orange: #c2410c;
+  --gray: #4b5563;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 22px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--line);
+}
+
+h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+h2 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+p {
+  margin: 3px 0 0;
+  color: var(--muted);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.actions form {
+  margin: 0;
+}
+
+button,
+.action-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  border: 1px solid var(--brand);
+  background: var(--brand);
+  color: #ffffff;
+  padding: 0 12px;
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+button:hover,
+.action-link:hover {
+  filter: brightness(0.95);
+}
+
+button:focus-visible,
+.action-link:focus-visible {
+  outline: 3px solid rgba(0, 94, 112, 0.25);
+  outline-offset: 2px;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.85fr) minmax(300px, 1.2fr) minmax(280px, 1fr);
+  gap: 12px;
+  padding: 14px;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  min-width: 0;
+}
+
+.parse-panel {
+  grid-column: span 2;
+}
+
+.evidence-panel,
+.events-panel {
+  grid-column: 1 / -1;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 7px 10px;
+  margin: 0;
+}
+
+dt {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.light {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  min-width: 132px;
+  justify-content: center;
+  padding: 0 12px;
+  margin: 0 0 12px;
+  border-radius: 6px;
+  color: #ffffff;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.light-green {
+  background: var(--green);
+}
+
+.light-yellow {
+  background: var(--yellow);
+}
+
+.light-orange {
+  background: var(--orange);
+}
+
+.light-gray {
+  background: var(--gray);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+th,
+td {
+  border-top: 1px solid var(--line);
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+th {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+ol {
+  margin: 0;
+  padding-left: 22px;
+}
+
+li {
+  margin: 4px 0;
+}
+
+@media (max-width: 920px) {
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .parse-panel,
+  .evidence-panel,
+  .events-panel {
+    grid-column: auto;
+  }
+}

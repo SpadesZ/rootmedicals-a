@@ -1,0 +1,249 @@
+/*
+ * 檔案路徑: rootmedicals-a/llmebm/app/static/css/style.css
+ * 產生時間: 2026-06-17 16:10 +08:00
+ * 版本: v0.1-交付整理
+ * 說明: llmebm 知識庫 UI 靜態資源。
+ * 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+ * ----------------------------------------------------------------------------------------------------
+ */
+
+/*
+# 路徑: rootmedicals-a/llmebm/app/static/css/style.css
+# 版本: v1.2
+# 更版時間: 2026-05-07 16:15
+# 說明: 
+#   1. 絕對遵守第二定律：100% 保留 v1.0 全部的樣式碼、變數宣告與防呆排版，不刪除任何一字元。
+#   2. [擴充] 在檔案最底部新增無限層級樹狀結構 (.layer-2 到 .layer-5) 的字體縮放與遞進縮排樣式。
+#   3. [擴充] 新增 `.has-children` 與 `.collapsed` 狀態的 CSS，實作展開/收合時的箭頭轉向視覺回饋。
+# ----------------------------------------------------------------------------------------------------
+*/
+
+:root {
+    --theme-dark-green: #006e82; --theme-light-teal: #008fa0; --btn-orange: #f39c12;
+    --bg-light-gray: #f9f9f9; --border-color: #ddd; --evidence-blue: #0056b3; --highlight-yellow: #ffff00;
+    --text-scale: 1.15;
+    --font-lg: calc(14px * var(--text-scale)); --font-base: calc(12px * var(--text-scale));     
+    --font-md: calc(10.5px * var(--text-scale)); --font-sm: calc(10px * var(--text-scale));       
+    --font-sm-alt: calc(9.75px * var(--text-scale)); --font-xs: calc(9px * var(--text-scale));        
+}
+
+body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #333; background-color: #fff; font-size: var(--font-base); }
+.top-bar { background-color: var(--theme-dark-green); color: white; display: flex; justify-content: space-between; padding: 12px 20px; font-size: var(--font-sm-alt); }
+.brand-name { font-weight: bold; font-size: calc(11.25px * var(--text-scale)); margin-right: 20px; }
+.top-link { margin-left: 15px; cursor: pointer; }
+.top-link:hover { text-decoration: underline; }
+.search-header { background-color: var(--theme-light-teal); padding: 30px 20px; text-align: center; border-bottom: 4px solid var(--btn-orange); }
+.main-logo { color: white; font-weight: normal; font-size: 27px; margin: 0 0 20px 0; }
+.search-box-container { display: flex; justify-content: center; max-width: 800px; margin: 0 auto; position: relative; }
+.input-wrapper { position: relative; flex-grow: 1; }
+#global-search-input { width: 100%; padding: 12px; font-size: var(--font-base); border: none; border-radius: 2px 0 0 2px; box-sizing: border-box; }
+.btn-search { background-color: var(--btn-orange); color: white; border: none; padding: 12px 25px; font-size: var(--font-base); font-weight: bold; cursor: pointer; border-radius: 0 2px 2px 0; transition: background-color 0.2s ease, transform 0.1s ease; }
+.btn-search:hover { background-color: #d68910; }
+.btn-search:active { transform: scale(0.98); } 
+.high-contrast-input { outline: none; transition: border-color 0.3s ease, box-shadow 0.3s ease; }
+.high-contrast-input:focus { border-color: var(--theme-light-teal) !important; box-shadow: 0 0 8px rgba(0, 143, 160, 0.3) !important; }
+.dropdown-content { position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ccc; box-shadow: 0 4px 6px rgba(0,0,0,0.1); z-index: 1000; text-align: left; }
+.hidden { display: none !important; }
+.dropdown-section { padding: 10px 0; }
+.section-label { font-size: var(--font-xs); color: #0056b3; font-weight: bold; padding: 0 15px; margin-bottom: 5px; border-bottom: 1px solid #eee; }
+.suggestion-list { list-style: none; padding: 0; margin: 0; }
+.suggestion-list li { padding: 8px 15px; cursor: pointer; font-size: var(--font-md); }
+.suggestion-list li:hover { background-color: var(--bg-light-gray); }
+
+.split-layout { display: flex; flex-direction: row; width: 100%; min-height: calc(100vh - 300px); overflow: hidden; background-color: #fff; border-bottom: 1px solid #ddd; }
+.split-panel { overflow-y: auto; box-sizing: border-box; transition: width 0.3s ease, flex 0.3s ease; }
+.resizer { width: 8px; background-color: #f1f1f1; border-left: 1px solid #ddd; border-right: 1px solid #ddd; cursor: col-resize; transition: background-color 0.2s ease; z-index: 10; }
+.resizer:hover, .resizer.active { background-color: var(--theme-light-teal); }
+.is-minimized .panel-inner-content { display: none !important; }
+.is-minimized .panel-header-ctrl h3 { display: none !important; }
+
+.nav-title { font-size: 10.5px; color: #666; border-bottom: 1px solid var(--border-color); padding-bottom: 5px; }
+.nav-category-title { font-size: var(--font-xs); color: var(--theme-dark-green); margin-top: 15px; margin-bottom: 8px; border-left: 3px solid var(--btn-orange); padding-left: 6px; font-weight: bold; }
+.chapter-list { list-style: none !important; padding-left: 0 !important; margin: 0; }
+.chapter-list li { padding: 6px 0; font-size: var(--font-md); cursor: pointer; color: #333; display: flex; align-items: center; }
+.chapter-list li:hover { color: var(--theme-dark-green); text-decoration: underline; }
+.chapter-list li::before { content: "▸"; margin-right: 6px; color: #999; font-size: 14px; }
+
+#topic-title { margin: 0; font-size: 21px; color: #000; }
+.ebm-section h3 { color: var(--theme-dark-green); font-size: 13.5px; }
+.cme-tag { font-size: var(--font-xs); color: #666; } 
+.content-updates { font-size: var(--font-xs); color: #0056b3; margin: 10px 0 20px 0; }
+.evidence-list { line-height: 1.6; font-size: var(--font-md); } 
+.evidence-list li { margin-bottom: 15px; }
+.evidence-level, .med-link { color: var(--evidence-blue); cursor: pointer; text-decoration: none; }
+.evidence-level:hover, .med-link:hover { text-decoration: underline; }
+mark.highlight { background-color: var(--highlight-yellow); color: black; font-weight: bold; padding: 2px 0; }
+mark.highlight.active { background-color: #ff9900; color: white; }
+
+.btn-fab { position: fixed; bottom: 30px; right: 30px; background-color: var(--theme-dark-green); color: white; border: none; border-radius: 30px; padding: 15px 25px; font-size: var(--font-lg); font-weight: bold; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 9998; transition: background-color 0.2s, transform 0.2s; }
+.btn-fab:hover { background-color: var(--theme-light-teal); transform: translateY(-2px); }
+.floating-widget { display: none; position: fixed; bottom: 90px; right: 30px; width: 380px; height: 500px; background-color: #fff; border-radius: 10px; box-shadow: 0 8px 25px rgba(0,0,0,0.25); border: 1px solid var(--border-color); z-index: 9999; flex-direction: column; resize: both; overflow: hidden; min-width: 280px; min-height: 350px; max-width: 80vw; max-height: 85vh; }
+.drag-handle { cursor: move; }
+.chat-header { background-color: var(--theme-dark-green); color: white; padding: 12px 15px; display: flex; justify-content: space-between; align-items: center; }
+.chat-history { flex-grow: 1; padding: 15px; overflow-y: auto; background-color: #f9fbfb; }
+.chat-msg { margin-bottom: 12px; padding: 12px; border-radius: 6px; font-size: var(--font-md); line-height: 1.5; }
+.system-msg { background-color: #f1f8ff; border-left: 4px solid var(--evidence-blue); color: #333; }
+.user-msg { background-color: #e8f4f8; border-right: 4px solid var(--theme-light-teal); color: #333; text-align: right; margin-left: 20%; }
+
+/* ==================================================
+   [v1.0 更新] 知識庫架構排版: 3欄式總表 & 2欄式樹狀結構
+   ================================================== */
+.specialties-dashboard { padding: 20px 0; }
+.specialties-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr); 
+    gap: 0 40px; 
+}
+.specialty-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #eaeaea;
+    padding: 12px 0;
+}
+.specialty-link {
+    color: var(--evidence-blue);
+    text-decoration: none;
+    font-size: calc(14px * var(--text-scale)); /* 放大外層字體 */
+    cursor: pointer;
+}
+.specialty-link:hover { text-decoration: underline; }
+.specialty-follow {
+    color: #888;
+    font-size: var(--font-xs);
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+.specialty-follow:before {
+    content: "🔖";
+    margin-right: 4px;
+    font-size: 12px;
+}
+
+/* 點擊後展開的 2 欄式瀑布流排版 */
+.specialty-tree-container {
+    column-count: 2; 
+    column-gap: 40px;
+    margin-top: 20px;
+}
+.tree-group {
+    break-inside: avoid-column; 
+    margin-bottom: 25px;
+}
+
+/* 放大第二階字體 */
+.tree-group-title {
+    color: var(--theme-dark-green);
+    font-size: calc(16px * var(--text-scale)); /* 覆寫放大要求：從預設放大為16px基底 */
+    font-weight: bold;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    transition: color 0.2s ease;
+}
+.tree-group-title:hover {
+    color: var(--theme-light-teal);
+}
+.tree-group-title:before {
+    content: "∨"; 
+    margin-right: 8px;
+    color: var(--btn-orange);
+    font-weight: bold;
+    transition: transform 0.2s ease;
+}
+.tree-group-title.collapsed:before {
+    content: ">"; /* 實作收合時的箭頭變化 */
+}
+
+/* 放大第三階字體 */
+.tree-item-list {
+    list-style: none;
+    padding-left: 20px; 
+    margin: 0;
+    transition: max-height 0.3s ease-out;
+}
+.tree-item-list li {
+    padding: 8px 0; /* 增加行距利於閱讀 */
+    font-size: calc(14px * var(--text-scale)); /* 覆寫放大要求：從預設放大為14px基底 */
+}
+.tree-item-link {
+    color: var(--evidence-blue);
+    text-decoration: none;
+}
+.tree-item-link:hover { text-decoration: underline; }
+
+/* ==================================================
+   [v1.2 擴充區塊] 全新無限層級 (Layer 2~5) 樹狀樣式 
+   確保不刪改任何舊版代碼，僅在此處疊加擴充樣式
+   ================================================== */
+.tree-node {
+    break-inside: avoid-column; /* 防止同一個群組被切斷分到左右兩欄 */
+    margin-bottom: 20px;
+}
+
+.node-title {
+    display: flex;
+    align-items: center;
+    cursor: default;
+    padding: 6px 0;
+    font-weight: bold;
+    color: #333;
+    transition: color 0.2s ease;
+}
+
+/* 遞進式深度排版與字型縮放 */
+.layer-2 > .node-title { 
+    font-size: calc(18px * var(--text-scale)); 
+    color: var(--theme-dark-green); 
+    border-bottom: 2px solid #eee; 
+    margin-bottom: 10px; 
+}
+.layer-3 > .node-title { 
+    font-size: calc(15px * var(--text-scale)); 
+    padding-left: 20px; 
+    color: #444; 
+}
+.layer-4 > .node-title { 
+    font-size: calc(13px * var(--text-scale)); 
+    padding-left: 40px; 
+    font-weight: normal; 
+    font-style: italic; 
+    color: #666; 
+}
+.layer-5 > .node-title { 
+    font-size: calc(12px * var(--text-scale)); 
+    padding-left: 60px; 
+    font-weight: normal; 
+}
+
+/* 具備子節點的層級展開/收合箭頭邏輯 */
+.has-children {
+    cursor: pointer !important; /* 確保游標顯示為可點擊 */
+}
+.has-children:hover {
+    color: var(--theme-light-teal);
+}
+.has-children:before {
+    content: "∨";
+    margin-right: 10px;
+    color: var(--btn-orange);
+    font-size: 14px;
+    font-weight: bold;
+    transition: transform 0.2s ease;
+}
+
+/* 觸發收合時的箭頭轉向與內容隱藏 */
+.has-children.collapsed:before {
+    content: ">";
+    transform: rotate(-90deg); /* 視覺反饋 */
+}
+
+.node-children {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.node-children.hidden {
+    display: none;
+}
