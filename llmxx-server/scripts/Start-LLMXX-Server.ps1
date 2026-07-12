@@ -16,6 +16,7 @@ $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $PSCommandPath
 $ServerDir = Split-Path -Parent $ScriptDir
+$RepoRoot = Split-Path -Parent $ServerDir
 $DataDir = Join-Path $ServerDir "data"
 $PidPath = Join-Path $DataDir "llmxx_server_$Port.pid"
 $LogPath = Join-Path $DataDir "llmxx_server_$Port.out.log"
@@ -43,7 +44,14 @@ function Test-Health {
     param([string]$Url)
     try {
         $response = Invoke-RestMethod -Uri $Url -Method Get -TimeoutSec 2
-        return [bool]$response.ok
+        if ($null -eq $response) {
+            return $false
+        }
+        if ($response.PSObject -and $null -ne $response.ok) {
+            return [bool]$response.ok
+        }
+        $txt = [string]$response
+        return $txt.Contains('"ok":true') -or $txt.Contains('"ok": true')
     } catch {
         return $false
     }
@@ -52,10 +60,56 @@ function Test-Health {
 function Get-HealthPayload {
     param([string]$Url)
     try {
-        return Invoke-RestMethod -Uri $Url -Method Get -TimeoutSec 2
+        $response = Invoke-RestMethod -Uri $Url -Method Get -TimeoutSec 2
+        if ($null -ne $response -and $response -is [string]) {
+            return $response | ConvertFrom-Json
+        }
+        return $response
     } catch {
         return $null
     }
+}
+
+function Test-PythonHasDeps {
+    param([string]$Exe)
+    if ([string]::IsNullOrWhiteSpace($Exe)) {
+        return $false
+    }
+    try {
+        & $Exe -c "import fastapi, uvicorn" 2>$null | Out-Null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    }
+}
+
+function Resolve-ServerPython {
+    # 依序嘗試可用的直譯器，第一個能 import fastapi/uvicorn 的就採用。
+    # 交付機常見狀況：全域 python 沒裝套件、或某個 venv 是從別台機器複製過來、
+    # base 直譯器路徑失效（pyvenv.cfg 指向不存在的 python）。這裡自動略過壞掉的候選。
+    $candidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($env:LLMXX_PYTHON)) {
+        $candidates += $env:LLMXX_PYTHON
+    }
+    $candidates += (Join-Path $ServerDir ".venv\Scripts\python.exe")
+    $candidates += (Join-Path $RepoRoot "venv\Scripts\python.exe")
+    $candidates += (Join-Path $RepoRoot "llmebm\.venv\Scripts\python.exe")
+    $pathPython = (Get-Command python -ErrorAction SilentlyContinue).Source
+    if ($pathPython) {
+        $candidates += $pathPython
+    }
+    foreach ($cand in $candidates) {
+        if ([string]::IsNullOrWhiteSpace($cand)) {
+            continue
+        }
+        if (-not (Test-Path -LiteralPath $cand)) {
+            continue
+        }
+        if (Test-PythonHasDeps -Exe $cand) {
+            return $cand
+        }
+    }
+    return $null
 }
 
 New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
@@ -63,23 +117,21 @@ New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 Write-Step "Folder: $ServerDir"
 Write-Step "Port  : $Port"
 
-$python = Get-Command python -ErrorAction SilentlyContinue
-if ($null -eq $python) {
-    Write-Host "[LLMXX] Python was not found in PATH." -ForegroundColor Red
-    Write-Host "[LLMXX] Please install/use the project Python before starting llmxx-server." -ForegroundColor Red
+$ServerPython = Resolve-ServerPython
+if ($null -eq $ServerPython) {
+    $reqPath = Join-Path $ServerDir "requirements.txt"
+    $reason = @(
+        "[LLMXX] No Python interpreter with fastapi/uvicorn was found.",
+        "[LLMXX] Tried, in order: `$env:LLMXX_PYTHON, $ServerDir\.venv, $RepoRoot\venv, $RepoRoot\llmebm\.venv, and PATH python.",
+        "[LLMXX] Fix option A: point at a working interpreter, e.g. `$env:LLMXX_PYTHON = 'C:\path\to\python.exe'.",
+        "[LLMXX] Fix option B: install deps into one of the above, e.g. python -m pip install -r `"$reqPath`"."
+    ) -join [Environment]::NewLine
+    Write-Host $reason -ForegroundColor Red
+    # 把真正的失敗原因寫進 err.log，控制台彈窗才不會顯示過期的舊 log 尾巴而誤導。
+    Set-Content -LiteralPath $ErrPath -Value $reason -Encoding UTF8
     exit 1
 }
-
-try {
-    & python -c "import fastapi, uvicorn" 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        throw "missing"
-    }
-} catch {
-    Write-Host "[LLMXX] fastapi/uvicorn is not importable in this Python environment." -ForegroundColor Red
-    Write-Host "[LLMXX] Run: python -m pip install -r requirements.txt" -ForegroundColor Yellow
-    exit 1
-}
+Write-Step "Python: $ServerPython"
 
 $existingPid = Get-ListeningProcessId -TargetPort $Port
 if ($null -ne $existingPid) {
@@ -141,7 +193,7 @@ if ($DemoFixture) {
 }
 Write-Step "RAG synthetic fallback: $(if ($SyntheticFallback -and -not $DemoFixture) { 'enabled' } else { 'disabled' })"
 $process = Start-Process `
-    -FilePath "python" `
+    -FilePath $ServerPython `
     -ArgumentList $arguments `
     -WorkingDirectory $ServerDir `
     -RedirectStandardOutput $LogPath `

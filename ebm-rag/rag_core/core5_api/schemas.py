@@ -18,8 +18,12 @@
 #     prioritize ICD-normalized diagnosis over OCR-only assessment text.
 #   - v0.5: Accept normalized_diagnosis separately from display label.
 # ----------------------------------------------------------------------------------------------------
-from pydantic import BaseModel
+import json
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional
+
+from lava.adapter.base import BaseLavaAdapter
 
 class QueryRequest(BaseModel):
     dx_summary: str
@@ -41,3 +45,83 @@ class CheckRequest(BaseModel):
     labs: Optional[dict] = None
     filters: Optional[dict] = None
     top_k: int = 10
+
+
+class TopicScreenshotRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mime_type: str
+    image_b64: str = Field(min_length=1, max_length=7_100_000)
+    state: str = Field(default="", max_length=120)
+
+    @field_validator("mime_type")
+    @classmethod
+    def validate_mime_type(cls, value: str) -> str:
+        mime_type = str(value or "").strip().lower()
+        if mime_type not in {"image/png", "image/jpeg"}:
+            raise ValueError("mime_type must be image/png or image/jpeg")
+        return mime_type
+
+    @field_validator("image_b64")
+    @classmethod
+    def validate_image_b64(cls, value: str, info) -> str:
+        # MIME is validated again with the decoded payload in the task boundary.
+        mime_type = info.data.get("mime_type", "")
+        BaseLavaAdapter.validate_vision_images([{"mime_type": mime_type, "image_b64": value}])
+        return value
+
+
+class TopicContentGenerateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    manifest: dict
+    screenshots: list[TopicScreenshotRequest] = Field(min_length=1, max_length=3)
+    only_slot_ids: list[str] = Field(default_factory=list, max_length=200)
+    filters: dict = Field(default_factory=dict)
+    top_k: int = Field(default=10, ge=1, le=50)
+
+    @field_validator("manifest")
+    @classmethod
+    def validate_manifest_size(cls, value: dict) -> dict:
+        encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        if len(encoded) > 1024 * 1024:
+            raise ValueError("manifest exceeds 1 MiB")
+        return value
+
+    @field_validator("only_slot_ids")
+    @classmethod
+    def validate_only_slot_ids(cls, value: list[str]) -> list[str]:
+        normalized = []
+        for item in value:
+            slot_id = str(item or "").strip()
+            if not slot_id or len(slot_id) > 300:
+                raise ValueError("only_slot_ids entries must be non-empty and at most 300 characters")
+            normalized.append(slot_id)
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("only_slot_ids contains duplicates")
+        return normalized
+
+    @field_validator("filters")
+    @classmethod
+    def validate_filters(cls, value: dict) -> dict:
+        allowed = {
+            "specialty", "disease", "source_type", "is_guideline", "has_contraindication_terms",
+            "min_ocebm", "min_ocebm_level", "prefer_six_s_levels", "query_decomposition_mode"
+        }
+        extra = set(value).difference(allowed)
+        if extra:
+            raise ValueError(f"filters contains unknown fields: {', '.join(sorted(extra))}")
+        for key, item in value.items():
+            if key in {"is_guideline", "has_contraindication_terms"}:
+                if not isinstance(item, bool):
+                    raise ValueError(f"filters.{key} must be a boolean")
+            elif key == "prefer_six_s_levels":
+                if not isinstance(item, list) or not 1 <= len(item) <= 5:
+                    raise ValueError("filters.prefer_six_s_levels must contain 1 to 5 strings")
+                if any(not isinstance(part, str) or not part.strip() or len(part) > 40 for part in item):
+                    raise ValueError("filters.prefer_six_s_levels entries must be strings up to 40 characters")
+            elif not isinstance(item, str) or not item.strip() or len(item) > 240:
+                raise ValueError(f"filters.{key} must be a non-empty string up to 240 characters")
+        if len(json.dumps(value, ensure_ascii=False)) > 20_000:
+            raise ValueError("filters payload is too large")
+        return value

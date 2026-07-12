@@ -27,6 +27,9 @@ services:
       - ./llmebm/data:/app/data
     env_file:
       - .env
+      - .env.topic
+    environment:
+      - EBM_RAG_BASE_URL=${EBM_RAG_BASE_URL:-http://host.docker.internal:33301}
 
   roothinx:
     build: ./roothinx

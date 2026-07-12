@@ -60,6 +60,10 @@ TEXT = {
         "click_expand": "點擊展開",
         "click_collapse": "點擊收合",
         "hide": "隱藏",
+        "minimize": "最小化",
+        "close": "關閉",
+        "zoom_out": "縮小字",
+        "zoom_in": "放大字",
         "language_button": "EN",
         "progress_default": "正在整理病歷並比對 EBM。",
         "busy": "上一筆仍在處理，請稍候。",
@@ -121,6 +125,10 @@ TEXT = {
         "click_expand": "Click to expand",
         "click_collapse": "Click to collapse",
         "hide": "Hide",
+        "minimize": "Minimize",
+        "close": "Close",
+        "zoom_out": "Smaller",
+        "zoom_in": "Larger",
         "language_button": "中文",
         "progress_default": "Reading the chart and checking EBM support.",
         "busy": "The previous review is still running.",
@@ -364,7 +372,10 @@ def _resolve_theme(doctor_cfg: Dict[str, Any]) -> tuple[str, Dict[str, str]]:
     return key, THEMES[key]
 
 
-def _theme_stylesheet(theme: Dict[str, str]) -> str:
+def _theme_stylesheet(theme: Dict[str, str], scale: float = 1.0) -> str:
+    # scale 讓醫師可在現場放大字級；只改字級與 padding，不動燈號顏色與臨床文字。
+    base = max(9, round(12 * scale))
+    btn = max(9, round(12 * scale))
     return f"""
         QWidget {{
             background: {theme["window"]};
@@ -372,7 +383,7 @@ def _theme_stylesheet(theme: Dict[str, str]) -> str:
             border-radius: 8px;
             color: {theme["text"]};
             font-family: "Microsoft JhengHei UI", "Segoe UI", sans-serif;
-            font-size: 12px;
+            font-size: {base}px;
         }}
         QLabel {{ border: none; background: transparent; color: {theme["text"]}; }}
         QPushButton {{
@@ -381,7 +392,9 @@ def _theme_stylesheet(theme: Dict[str, str]) -> str:
             padding: 2px 6px;
             background: {theme["button_bg"]};
             color: {theme["text"]};
+            font-size: {btn}px;
         }}
+        QSizeGrip {{ background: transparent; border: none; width: 16px; height: 16px; }}
         QPlainTextEdit {{
             border: 1px solid {theme["detail_border"]};
             border-radius: 6px;
@@ -389,7 +402,7 @@ def _theme_stylesheet(theme: Dict[str, str]) -> str:
             color: {theme["detail_text"]};
             padding: 6px;
             font-family: "Microsoft JhengHei UI", "Segoe UI", sans-serif;
-            font-size: 12px;
+            font-size: {base}px;
         }}
         QScrollBar:vertical {{
             background: {theme["detail_bg"]};
@@ -639,7 +652,7 @@ class DoctorAlertWidget:
     def __init__(self, config: Dict[str, Any]):
         try:
             from PySide6.QtCore import Qt
-            from PySide6.QtWidgets import QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
+            from PySide6.QtWidgets import QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QSizeGrip, QVBoxLayout, QWidget
         except Exception as exc:
             raise RuntimeError("PySide6 is required for DoctorAlertWidget") from exc
 
@@ -653,16 +666,29 @@ class DoctorAlertWidget:
         self._drag_start_widget = None
         self._drag_moved = False
         self._user_positioned = False
+        self._user_resized = False
+        # 字級縮放：現場醫師常反映字太小，這裡讓 A-/A+ 動態放大，並記住上次設定。
+        try:
+            self.zoom = float(doctor_cfg.get("zoom", 1.0) or 1.0)
+        except (TypeError, ValueError):
+            self.zoom = 1.0
+        self.zoom = min(2.4, max(0.8, self.zoom))
+        self._zoom_min = 0.8
+        self._zoom_max = 2.4
+        self._zoom_step_size = 0.15
         self.Qt = Qt
         self.widget = QWidget()
         self.widget.setWindowTitle("RootMedicals EBM Alert")
+        # 用 Qt.Window（而非 Qt.Tool）讓最小化後在工作列有按鈕可以還原，
+        # 不再像舊版「隱藏」後叫不回來。仍保持無邊框 + always-on-top。
         self.widget.setWindowFlags(
-            Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
+            Qt.WindowType.Window
             | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.WindowMinimizeButtonHint
         )
         self.widget.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
-        self.widget.setStyleSheet(_theme_stylesheet(self.theme))
+        self.widget.setStyleSheet(_theme_stylesheet(self.theme, self.zoom))
 
         layout = QVBoxLayout(self.widget)
         layout.setContentsMargins(10, 8, 10, 8)
@@ -691,13 +717,34 @@ class DoctorAlertWidget:
         self.language_button = QPushButton(TEXT[self.language]["language_button"])
         self.language_button.setFixedWidth(54)
         self.language_button.clicked.connect(self._toggle_language)
-        self.close_button = QPushButton(TEXT[self.language]["hide"])
-        self.close_button.setFixedWidth(64)
-        self.close_button.clicked.connect(self.widget.hide)
+        # 字體縮放按鈕：A－ / A＋。點按鈕不會觸發拖移或展開（子元件自行吃掉事件）。
+        self.zoom_out_button = QPushButton("A－")
+        self.zoom_out_button.setFixedWidth(40)
+        self.zoom_out_button.setToolTip(TEXT[self.language]["zoom_out"])
+        self.zoom_out_button.clicked.connect(lambda: self._zoom_step(-1))
+        self.zoom_in_button = QPushButton("A＋")
+        self.zoom_in_button.setFixedWidth(40)
+        self.zoom_in_button.setToolTip(TEXT[self.language]["zoom_in"])
+        self.zoom_in_button.clicked.connect(lambda: self._zoom_step(1))
+        # 最小化：縮到工作列，之後可還原（取代舊的「隱藏」）。
+        self.minimize_button = QPushButton(TEXT[self.language]["minimize"])
+        self.minimize_button.setFixedWidth(64)
+        self.minimize_button.clicked.connect(self._minimize)
+        # 關閉：關掉這個提醒視窗；下一次 Ctrl+Alt+G 或 tray 還原會再叫回來。
+        self.close_button = QPushButton(TEXT[self.language]["close"])
+        self.close_button.setFixedWidth(56)
+        self.close_button.clicked.connect(self.widget.close)
+        # 右下角 size grip：讓無邊框視窗也能被使用者自由縮放。
+        self.size_grip = QSizeGrip(self.widget)
+
         button_row = QHBoxLayout()
         button_row.addWidget(self.language_button, 0)
+        button_row.addWidget(self.zoom_out_button, 0)
+        button_row.addWidget(self.zoom_in_button, 0)
         button_row.addStretch(1)
+        button_row.addWidget(self.minimize_button, 0)
         button_row.addWidget(self.close_button, 0)
+        button_row.addWidget(self.size_grip, 0, self.Qt.AlignmentFlag.AlignBottom | self.Qt.AlignmentFlag.AlignRight)
 
         layout.addWidget(self.title_label)
         layout.addWidget(self.status_label)
@@ -712,7 +759,7 @@ class DoctorAlertWidget:
         self.widget.mousePressEvent = self._mouse_press_event
         self.widget.mouseMoveEvent = self._mouse_move_event
         self.widget.mouseReleaseEvent = self._mouse_release_event
-        self._resize()
+        self._apply_zoom(initial=True)
         self._place_near_target_window()
 
     def show_event(self, event: Dict[str, Any]) -> None:
@@ -879,7 +926,10 @@ class DoctorAlertWidget:
     def _toggle_language(self) -> None:
         self.language = "en" if self.language == "zh" else "zh"
         self.language_button.setText(TEXT[self.language]["language_button"])
-        self.close_button.setText(TEXT[self.language]["hide"])
+        self.minimize_button.setText(TEXT[self.language]["minimize"])
+        self.close_button.setText(TEXT[self.language]["close"])
+        self.zoom_out_button.setToolTip(TEXT[self.language]["zoom_out"])
+        self.zoom_in_button.setToolTip(TEXT[self.language]["zoom_in"])
         self.show_event(self._last_event)
 
     def _mouse_press_event(self, event: Any) -> None:
@@ -931,14 +981,54 @@ class DoctorAlertWidget:
         return event.globalPos()
 
     def _resize(self) -> None:
-        width = 360 if not self.expanded else 460
-        height = 245 if not self.expanded else 560
-        self.widget.setFixedSize(width, height)
+        # 不再用 setFixedSize，改成 min size + resize，這樣 QSizeGrip 才能讓使用者自由縮放。
+        z = self.zoom
+        width = round((360 if not self.expanded else 460) * z)
+        height = round((245 if not self.expanded else 560) * z)
+        self.widget.setMinimumSize(round(280 * z), round(170 * z))
+        self.widget.resize(width, height)
+
+    def _apply_zoom(self, initial: bool = False) -> None:
+        # 依 self.zoom 重算字級與關鍵高度，讓現場字太小時可放大看清楚。
+        z = self.zoom
+        self.widget.setStyleSheet(_theme_stylesheet(self.theme, z))
+        self.title_label.setStyleSheet(f"font-weight: 700; font-size: {round(12 * z)}px;")
+        self.hint_label.setStyleSheet(f"color: {self.theme['muted']}; font-size: {round(10 * z)}px;")
+        self.tx_label.setMaximumHeight(round(54 * z))
+        self.comment_label.setMaximumHeight(round(68 * z))
+        self.detail_box.setMinimumHeight(round(250 * z))
+        self._resize()
+        if not initial:
+            # 狀態列的顏色/字樣是動態設定的，重畫一次確保縮放後樣式正確。
+            self.show_event(self._last_event)
+
+    def _zoom_step(self, direction: int) -> None:
+        new_zoom = round(self.zoom + direction * self._zoom_step_size, 2)
+        new_zoom = min(self._zoom_max, max(self._zoom_min, new_zoom))
+        if abs(new_zoom - self.zoom) < 1e-6:
+            return
+        self.zoom = new_zoom
+        self._apply_zoom()
+
+    def _minimize(self) -> None:
+        # 最小化到工作列，之後可從工作列或 tray 選單還原（取代舊的「隱藏」）。
+        self.widget.showMinimized()
+
+    def restore(self) -> None:
+        # 供 tray 選單「顯示/還原 EBM 視窗」呼叫：不論最小化或已關閉都能叫回來。
+        if not self._user_positioned:
+            self._place_near_target_window()
+        self.widget.showNormal()
+        self.widget.raise_()
+        self.widget.activateWindow()
 
     def _show_widget(self) -> None:
         if not self._user_positioned:
             self._place_near_target_window()
-        self.widget.show()
+        if self.widget.isMinimized():
+            self.widget.showNormal()
+        else:
+            self.widget.show()
         self.widget.raise_()
 
     def _place_near_target_window(self) -> None:

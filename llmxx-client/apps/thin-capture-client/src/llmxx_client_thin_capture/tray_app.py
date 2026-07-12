@@ -65,15 +65,19 @@ class TrayClientApp:
 
         menu = QMenu()
         capture_action = QAction("Run Capture Now")
+        restore_alert_action = QAction("Show / Restore EBM Alert")
         diagnostics_action = QAction("Open Diagnostics Folder")
         quit_action = QAction("Quit")
         menu.addAction(capture_action)
+        menu.addAction(restore_alert_action)
         menu.addAction(diagnostics_action)
         menu.addSeparator()
         menu.addAction(quit_action)
         tray.setContextMenu(menu)
 
         capture_action.triggered.connect(lambda: signals.capture_requested.emit("tray"))
+        # 保證浮窗「叫得回來」：即使被最小化或關閉，都可從 tray 選單還原。
+        restore_alert_action.triggered.connect(alert_widget.restore)
         tray.activated.connect(lambda reason: signals.capture_requested.emit("tray-double-click") if reason == QSystemTrayIcon.ActivationReason.DoubleClick else None)
         diagnostics_action.triggered.connect(self._open_diagnostics_folder)
         quit_action.triggered.connect(lambda: self._quit(app))

@@ -35,6 +35,8 @@ _TASK_EXECUTORS = {
     "ebm_generate": ("lava.matching_tasks.ebm_generate", "execute_ebm_generate"),
     "query_decompose": ("lava.matching_tasks.query_decompose", "execute_query_decompose"),
     "rag_query_strategy": ("lava.matching_tasks.rag_query_strategy", "execute_rag_query_strategy"),
+    "topic_content_plan": ("lava.matching_tasks.topic_content_plan", "execute_topic_content_plan"),
+    "topic_content_compose": ("lava.matching_tasks.topic_content_compose", "execute_topic_content_compose"),
     "synthetic_ebm_candidate": ("lava.matching_tasks.synthetic_ebm_candidate", "execute_synthetic_ebm_candidate"),
     "claim_verify": ("lava.matching_tasks.claim_verify", "execute_claim_verify"),
     "clinical_soap_parse": ("lava.matching_tasks.clinical_soap_parse", "execute_clinical_soap_parse"),
@@ -83,6 +85,8 @@ def _connection_readiness(row: dict | None, required_capability: str | None = No
             return False, "provider_does_not_support_embedding"
         if required_capability == "chat" and not adapter.supports_chat:
             return False, "provider_does_not_support_chat"
+        if required_capability == "vision" and not adapter.supports_vision:
+            return False, "provider_does_not_support_vision"
         if conn.get("verified_capability") != required_capability:
             return False, f"connection_not_verified_for_{required_capability}"
     return True, None
@@ -222,6 +226,8 @@ async def verify_connection(body: VerifyRequest):
     try:
         if body.capability == "embedding":
             result = await adapter.verify_embedding(row["api_key"], row["model_id"])
+        elif body.capability == "vision":
+            result = await adapter.verify_vision(row["api_key"], row["model_id"])
         else:
             result = await adapter.verify_chat(row["api_key"], row["model_id"])
             if result.get("ok"):
@@ -289,6 +295,8 @@ async def update_binding(task_id: str, body: BindingUpdate):
         raise HTTPException(status_code=409, detail=f"Connection is not ready for {task_id}: {reason}")
     if task_def["capability"] == "embedding" and adapter and not adapter.supports_embedding:
         raise HTTPException(status_code=400, detail=f"Provider {conn_dict['provider']} does not support embedding")
+    if task_def["capability"] == "vision" and adapter and not adapter.supports_vision:
+        raise HTTPException(status_code=400, detail=f"Provider {conn_dict['provider']} does not support vision")
     LLMModel.update_binding(task_id, body.connection_id)
     return {"ok": True, "task_id": task_id, "connection_id": body.connection_id}
 

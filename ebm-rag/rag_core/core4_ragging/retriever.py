@@ -438,11 +438,18 @@ async def retrieve(
             lambda: _search_qdrant_points(client, collection, vector, query_filter, safe_top_k)
         )
 
-    async def run_phase(name: str, six_s_levels: list[str] | None, allow_unknown_ocebm: bool, include_source_type: bool) -> None:
+    async def run_phase(
+        name: str,
+        six_s_levels: list[str] | None,
+        allow_unknown_ocebm: bool,
+        include_source_type: bool,
+        active_filters: dict | None = None,
+    ) -> None:
+        phase_filters = filters if active_filters is None else active_filters
         phase_filter = _qdrant_filter(
             six_s_levels=six_s_levels,
             min_ocebm=min_ocebm,
-            filters=filters,
+            filters=phase_filters,
             allow_unknown_ocebm=allow_unknown_ocebm,
             include_source_type=include_source_type
         )
@@ -455,7 +462,7 @@ async def retrieve(
             name=name,
             six_s_levels=six_s_levels,
             min_ocebm=min_ocebm,
-            filters=filters,
+            filters=phase_filters,
             allow_unknown_ocebm=allow_unknown_ocebm,
             include_source_type=include_source_type
         )
@@ -471,6 +478,22 @@ async def retrieve(
 
     if len(seen) < safe_top_k:
         await run_phase("phase3_clinical_metadata_unknown_ocebm", None, allow_unknown_ocebm=True, include_source_type=False)
+
+    if not seen and any(filters.get(key) for key in ("disease", "specialty", "source_type")):
+        # ponytail: local taxonomy labels are not guaranteed to match indexed
+        # metadata. Only after every strict phase is empty, fall back to the
+        # semantic query while retaining safety/evidence filters.
+        relaxed_filters = {
+            key: value for key, value in filters.items()
+            if key not in {"disease", "specialty", "source_type"}
+        }
+        await run_phase(
+            "phase4_semantic_fallback",
+            None,
+            allow_unknown_ocebm=True,
+            include_source_type=False,
+            active_filters=relaxed_filters,
+        )
 
     ranked_hits = sorted(seen.values(), key=lambda item: item["score"], reverse=True)[:safe_top_k]
     status = "ok"

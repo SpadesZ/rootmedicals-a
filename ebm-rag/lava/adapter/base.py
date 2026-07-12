@@ -15,6 +15,8 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict
 import asyncio
+import base64
+import binascii
 import re
 
 import httpx
@@ -25,6 +27,11 @@ class BaseLavaAdapter(ABC):
     provider: str
     supports_chat: bool = True
     supports_embedding: bool = False
+    supports_vision: bool = False
+
+    _VISION_MIME_TYPES = {"image/png", "image/jpeg"}
+    _MAX_VISION_IMAGES = 3
+    _MAX_VISION_IMAGE_BYTES = 5 * 1024 * 1024
 
     @abstractmethod
     async def fetch_models(self, api_key: str) -> List[str]:
@@ -38,6 +45,10 @@ class BaseLavaAdapter(ABC):
     async def chat(self, api_key: str, model_id: str, messages: List[Dict],
                    temperature: float = 0.1, max_tokens: int = 2048) -> Dict:
         raise NotImplementedError
+
+    async def vision(self, api_key: str, model_id: str, prompt: str, images: List[Dict],
+                     temperature: float = 0.0, max_tokens: int = 2048) -> Dict:
+        raise NotImplementedError("This provider does not support vision")
 
     async def embed(self, api_key: str, model_id: str, texts: List[str]) -> List[List[float]]:
         raise NotImplementedError("This provider does not support embedding")
@@ -78,6 +89,7 @@ class BaseLavaAdapter(ABC):
             message = message.replace(api_key, "[REDACTED_API_KEY]")
         message = re.sub(r"([?&]key=)[^'\"\\s]+", r"\1[REDACTED_API_KEY]", message)
         message = re.sub(r"(Authorization:\\s*Bearer\\s+)[A-Za-z0-9._\\-]+", r"\1[REDACTED_API_KEY]", message)
+        message = re.sub(r"data:image/(?:png|jpeg);base64,[A-Za-z0-9+/=]+", "[REDACTED_IMAGE]", message)
         status_code = self._status_code_from_error(error)
         if status_code == 429:
             return "provider_rate_limited: upstream provider returned HTTP 429"
@@ -87,6 +99,68 @@ class BaseLavaAdapter(ABC):
             return "provider_timeout: upstream provider request timed out"
         message = re.sub(r"https?://[^'\"\\s]+", "[REDACTED_URL]", message)
         return message[:500]
+
+    @classmethod
+    def validate_vision_images(cls, images: List[Dict]) -> List[Dict]:
+        if not isinstance(images, list) or not 1 <= len(images) <= cls._MAX_VISION_IMAGES:
+            raise ValueError(f"images must contain 1 to {cls._MAX_VISION_IMAGES} items")
+        normalized = []
+        for index, image in enumerate(images):
+            if not isinstance(image, dict):
+                raise ValueError(f"images[{index}] must be an object")
+            mime_type = str(image.get("mime_type") or "").strip().lower()
+            if mime_type not in cls._VISION_MIME_TYPES:
+                raise ValueError(f"images[{index}].mime_type must be image/png or image/jpeg")
+            raw = image.get("data")
+            if raw is None:
+                encoded = image.get("image_b64")
+                if not isinstance(encoded, str):
+                    raise ValueError(f"images[{index}] requires data bytes or image_b64")
+                try:
+                    raw = base64.b64decode(encoded, validate=True)
+                except (binascii.Error, ValueError) as error:
+                    raise ValueError(f"images[{index}].image_b64 is invalid base64") from error
+            if not isinstance(raw, (bytes, bytearray)):
+                raise ValueError(f"images[{index}].data must be bytes")
+            raw = bytes(raw)
+            if not raw or len(raw) > cls._MAX_VISION_IMAGE_BYTES:
+                raise ValueError(
+                    f"images[{index}] decoded size must be between 1 and {cls._MAX_VISION_IMAGE_BYTES} bytes"
+                )
+            if mime_type == "image/png" and not raw.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise ValueError(f"images[{index}] is not a valid PNG payload")
+            if mime_type == "image/jpeg" and not (raw.startswith(b"\xff\xd8") and raw.endswith(b"\xff\xd9")):
+                raise ValueError(f"images[{index}] is not a valid JPEG payload")
+            normalized.append({"mime_type": mime_type, "data": raw})
+        return normalized
+
+    async def verify_vision(self, api_key: str, model_id: str) -> Dict:
+        if not self.supports_vision:
+            return {"ok": False, "error": "Provider does not support vision"}
+        # A public 1x1 PNG keeps verification independent of user screenshots.
+        image = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        )
+        try:
+            result = await self.vision(
+                api_key,
+                model_id,
+                "Reply with the single word OK after inspecting this harmless test image.",
+                [{"mime_type": "image/png", "data": image}],
+                # Gemini 2.5 may spend part of the output budget on internal
+                # reasoning before emitting the requested text.
+                max_tokens=1024,
+            )
+            if not str(result.get("content") or "").strip():
+                return {"ok": False, "error": "Vision endpoint returned empty content"}
+            return {
+                "ok": True,
+                "model": model_id,
+                "provider": self.provider,
+                "capability": "vision",
+            }
+        except Exception as error:
+            return {"ok": False, "error": self.safe_error(error, api_key)}
 
     async def verify_embedding(self, api_key: str, model_id: str) -> Dict:
         if not self.supports_embedding:

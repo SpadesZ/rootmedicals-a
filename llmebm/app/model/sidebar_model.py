@@ -16,6 +16,7 @@
 
 import sqlite3
 import os
+import hashlib
 from contextlib import contextmanager
 from collections import defaultdict
 
@@ -87,7 +88,28 @@ class SidebarDatabase:
             ''')
             conn.commit()
 
-    def get_sidebar_tree(self, topic_name: str):
+    @staticmethod
+    def topic_uid_for(topic_name: str, topic_uid: str = "") -> str:
+        """Return a stable non-secret UID when the taxonomy row has no UID yet."""
+        if topic_uid:
+            return topic_uid
+        digest = hashlib.sha256(topic_name.strip().casefold().encode("utf-8")).hexdigest()[:16]
+        return f"topic-{digest}"
+
+    @staticmethod
+    def _with_slot_metadata(node, topic_uid: str, source: str):
+        node_id = node["id"]
+        return {
+            **node,
+            "slot_id": f"{topic_uid}:{source}:{node_id}",
+            "content_target": True,
+            "children": [
+                SidebarDatabase._with_slot_metadata(child, topic_uid, source)
+                for child in node.get("children", [])
+            ],
+        }
+
+    def get_sidebar_tree(self, topic_name: str, topic_uid: str = ""):
         """回傳包含 Universal Template 與 Custom Nodes (Specialized Features) 的複合字典"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -124,9 +146,17 @@ class SidebarDatabase:
                     "children": build_custom_tree(root['id'])
                 })
                 
+        stable_topic_uid = self.topic_uid_for(topic_name, topic_uid)
         return {
-            "universal": UNIVERSAL_TEMPLATE,
-            "custom": custom_tree
+            "topic_uid": stable_topic_uid,
+            "universal": [
+                self._with_slot_metadata(node, stable_topic_uid, "universal")
+                for node in UNIVERSAL_TEMPLATE
+            ],
+            "custom": [
+                self._with_slot_metadata(node, stable_topic_uid, "custom")
+                for node in custom_tree
+            ],
         }
 
     def get_custom_nodes_flat(self, topic_name: str):
@@ -154,11 +184,15 @@ class SidebarDatabase:
     def delete_custom_node(self, node_id: int):
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            cursor.execute("SELECT topic_name FROM sidebar_nodes WHERE id = ?", (node_id,))
+            node = cursor.fetchone()
+            if not node:
+                raise ValueError("Sidebar node not found.")
             cursor.execute("SELECT COUNT(*) FROM sidebar_nodes WHERE parent_id = ?", (node_id,))
             if cursor.fetchone()[0] > 0:
                 raise ValueError("Cannot delete node: It contains active sub-categories.")
             cursor.execute("DELETE FROM sidebar_nodes WHERE id = ?", (node_id,))
             conn.commit()
-            return True
+            return node["topic_name"]
 
 sidebar_db = SidebarDatabase()

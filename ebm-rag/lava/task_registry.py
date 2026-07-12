@@ -60,6 +60,22 @@ RAG_TASKS = [
         "description": "醫師問題 -> RAG 查詢策略 / 查詢拆解 / 問資料庫前的語意溝通；失敗時回退 deterministic"
     },
     {
+        "task_id": "topic_content_plan",
+        "label": "Topic Content Planner",
+        "capability": "vision",
+        "module": "lava.matching_tasks.topic_content_plan",
+        "required": False,
+        "description": "llmebm Topic manifest + screenshot -> 嚴格 section evidence plan"
+    },
+    {
+        "task_id": "topic_content_compose",
+        "label": "Topic Content Composer",
+        "capability": "chat",
+        "module": "lava.matching_tasks.topic_content_compose",
+        "required": False,
+        "description": "只依 retrieved evidence 組成白名單 Topic content blocks"
+    },
+    {
         "task_id": "synthetic_ebm_candidate",
         "label": "Synthetic EBM Candidate",
         "capability": "chat",

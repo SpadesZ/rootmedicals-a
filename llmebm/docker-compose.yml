@@ -33,6 +33,9 @@ services:
       - ./main_ebm.py:/app/main_ebm.py
     env_file:
       - ../.env
+      - ../.env.topic
+    environment:
+      - EBM_RAG_BASE_URL=${EBM_RAG_BASE_URL:-http://host.docker.internal:33301}
     restart: unless-stopped
     networks:
       - ebm_local_net

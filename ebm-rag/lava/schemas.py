@@ -43,8 +43,8 @@ class VerifyRequest(BaseModel):
     @classmethod
     def validate_capability(cls, value: str) -> str:
         capability = str(value or "").strip().lower()
-        if capability not in {"chat", "embedding"}:
-            raise ValueError("capability must be chat or embedding")
+        if capability not in {"chat", "embedding", "vision"}:
+            raise ValueError("capability must be chat, embedding, or vision")
         return capability
 
 class BindingUpdate(BaseModel):

@@ -1,0 +1,128 @@
+{
+  "_version_history": [
+    "VM delivery config - client 送到雲端 VM (34.81.196.75)。交付版把這份複製成 default_config.json。",
+    "v0.1 20260617-2135 - thin capture client 設定：client 只截圖與送出，OCR/normalization 統一由 llmxx-server 執行。",
+    "v0.2 20260617-2135 - 移除 client OCR、preprocess、normalizer、anonymizer 與 server_payload 設定面。"
+  ],
+  "app": {
+    "name": "llmxx-client-thin-capture",
+    "version": "0.1.0",
+    "client_mode": "thin_screenshot_sender",
+    "diagnostics_dir": "diagnostics",
+    "save_sanitized_diagnostics": true,
+    "zero_disk_image_io": true
+  },
+  "target_window": {
+    "title_contains": [
+      "Clinical Guard (Phase 1 Local)",
+      "Clinical Guard"
+    ],
+    "bring_to_front": true,
+    "restore_if_minimized": true
+  },
+  "capture": {
+    "mode": "auto_layout_soap_fields",
+    "fallback_to_configured_regions": true,
+    "layout_detection": {
+      "white_threshold": 245,
+      "min_width_ratio": 0.55,
+      "min_height_ratio": 0.045,
+      "max_height_ratio": 0.18,
+      "min_y_ratio": 0.13,
+      "max_y_ratio": 0.84
+    },
+    "vital_signs": {
+      "enabled": true,
+      "mode": "auto_vital_entry_fields",
+      "white_threshold": 245,
+      "field_regions": {
+        "bp": {
+          "x": 0.043,
+          "y": 0.856,
+          "w": 0.108,
+          "h": 0.028
+        },
+        "hr": {
+          "x": 0.185,
+          "y": 0.856,
+          "w": 0.109,
+          "h": 0.028
+        },
+        "temp": {
+          "x": 0.342,
+          "y": 0.856,
+          "w": 0.108,
+          "h": 0.028
+        },
+        "rr": {
+          "x": 0.484,
+          "y": 0.856,
+          "w": 0.108,
+          "h": 0.028
+        },
+        "spo2": {
+          "x": 0.639,
+          "y": 0.856,
+          "w": 0.108,
+          "h": 0.028
+        }
+      }
+    },
+    "field_regions": {
+      "S": {
+        "x": 0.044,
+        "y": 0.169,
+        "w": 0.931,
+        "h": 0.152
+      },
+      "O": {
+        "x": 0.044,
+        "y": 0.331,
+        "w": 0.931,
+        "h": 0.153
+      },
+      "A": {
+        "x": 0.044,
+        "y": 0.494,
+        "w": 0.931,
+        "h": 0.153
+      },
+      "P": {
+        "x": 0.044,
+        "y": 0.657,
+        "w": 0.931,
+        "h": 0.153
+      }
+    }
+  },
+  "demo_fixture": {
+    "enabled": false,
+    "mode": "demo_fixture",
+    "fixture_id": "allergic_rhinitis_intranasal_steroid"
+  },
+  "network": {
+    "endpoint_url": "https://34.80.145.165.sslip.io/api/intake",
+    "send_enabled": true,
+    "timeout_seconds": 120.0,
+    "allow_insecure_localhost_http": true,
+    "application_aes_gcm": {
+      "enabled": false,
+      "key_env_var": "LLMXX_CLIENT_AES256_KEY_B64"
+    }
+  },
+  "doctor_alert": {
+    "enabled": true,
+    "theme": "white",
+    "poll_enabled": true,
+    "poll_seconds": 120.0,
+    "poll_interval_seconds": 2.0
+  },
+  "hotkey": {
+    "enabled": true,
+    "binding": "<ctrl>+<alt>+g"
+  },
+  "verification": {
+    "expected_soap_path": "config/expected_soap.sample.json",
+    "similarity_threshold": 0.92
+  }
+}

@@ -27,12 +27,14 @@
 import os
 import json
 import asyncio
+import urllib.error
+import urllib.request
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional  # [v1.0 擴充] 新增 Optional 供手動 CRUD 模型使用
 import uvicorn
 
@@ -44,6 +46,8 @@ from app.model.ebm_model import ebm_db
 from app.model.ebm_model import admin_db
 # [擴充] 引入獨立的 Sidebar 知識庫引擎供 specialty.html 使用
 from app.model.sidebar_model import sidebar_db
+from app.model.topic_content_model import build_manifest, load_screenshot_payloads, topic_content_db
+from app.topic_security import generation_request_authorized
 
 # 建立 FastAPI 實例
 app = FastAPI(
@@ -80,6 +84,12 @@ class NodeUpdate(BaseModel):
 class SidebarNodeCreate(BaseModel):
     parent_id: Optional[int] = None
     name: str
+
+class TopicGenerateRequest(BaseModel):
+    only_slot_ids: list[str] = Field(default_factory=list)
+    force: bool = False
+    filters: dict = Field(default_factory=dict)
+    top_k: int = 10
 
 # 取得當前目錄的絕對路徑，確保 Docker 內外路徑解析正確
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -175,7 +185,7 @@ async def render_specialty_page(request: Request, topic_name: str):
     動態呼叫 admin_db 撈取該節點專屬的階層 Base-33 UID，傳遞給前端標題顯示。
     """
     node_info = admin_db.get_node_by_name(topic_name)
-    topic_uid = node_info['uid'] if node_info and node_info.get('uid') else ""
+    topic_uid = sidebar_db.topic_uid_for(topic_name, node_info.get('uid', '') if node_info else '')
     
     return templates.TemplateResponse(
         request=request, 
@@ -190,8 +200,179 @@ async def render_specialty_page(request: Request, topic_name: str):
 @app.get("/api/v1/topic/{topic_name}/sidebar")
 async def get_topic_sidebar(topic_name: str):
     """動態撈取特定主題的 3 層 Sidebar 目錄 (包含通用與自建)"""
-    tree = sidebar_db.get_sidebar_tree(topic_name)
-    return {"status": "success", "topic": topic_name, "tree": tree}
+    topic_uid = _topic_uid(topic_name)
+    tree = sidebar_db.get_sidebar_tree(topic_name, topic_uid)
+    current_manifest = topic_content_db.get_current_manifest(topic_name)
+    statuses = topic_content_db.status_for_topic(topic_uid, current_manifest)["slots"]
+
+    def add_status(nodes):
+        for node in nodes:
+            node["content_status"] = statuses.get(node["slot_id"], {}).get("status", "empty")
+            add_status(node.get("children", []))
+
+    add_status(tree["universal"])
+    add_status(tree["custom"])
+    return {"status": "success", "topic": topic_name, "topic_uid": topic_uid, "tree": tree}
+
+
+def _topic_uid(topic_name: str) -> str:
+    node_info = admin_db.get_node_by_name(topic_name)
+    return sidebar_db.topic_uid_for(topic_name, node_info.get("uid", "") if node_info else "")
+
+
+def _ensure_topic_manifest(topic_name: str):
+    manifest = topic_content_db.get_current_manifest(topic_name)
+    if manifest:
+        return manifest
+    topic_uid = _topic_uid(topic_name)
+    tree = sidebar_db.get_sidebar_tree(topic_name, topic_uid)
+    return topic_content_db.save_manifest(build_manifest(topic_name, topic_uid, tree))
+
+
+def _mark_topic_manifest_dirty(topic_name: str):
+    """Rebuild the DOM contract after sidebar edits; the scanner restores screenshots."""
+    topic_uid = _topic_uid(topic_name)
+    tree = sidebar_db.get_sidebar_tree(topic_name, topic_uid)
+    return topic_content_db.save_manifest(build_manifest(topic_name, topic_uid, tree))
+
+
+def _public_topic_manifest(manifest):
+    public_manifest = json.loads(json.dumps(manifest))
+    public_manifest["screenshots"] = [
+        {key: value for key, value in screenshot.items() if key != "artifact_path"}
+        for screenshot in public_manifest.get("screenshots", [])
+    ]
+    return public_manifest
+
+
+def _post_topic_generation(payload):
+    base_url = os.getenv("EBM_RAG_BASE_URL", "http://127.0.0.1:33301").rstrip("/")
+    url = f"{base_url}/api/v1/rag/topic-content/generate"
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    generation_token = os.getenv("LLMEBM_TOPIC_GENERATION_TOKEN", "")
+    if generation_token:
+        headers["X-LLMEBM-Topic-Token"] = generation_token
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:
+            body = response.read(10 * 1024 * 1024 + 1)
+    except urllib.error.HTTPError as exc:
+        body = exc.read(4096).decode("utf-8", errors="replace")
+        raise RuntimeError(f"ebm-rag returned HTTP {exc.code}: {body}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"ebm-rag unavailable: {exc.reason}") from exc
+    if len(body) > 10 * 1024 * 1024:
+        raise RuntimeError("ebm-rag response exceeded 10 MiB.")
+    return json.loads(body.decode("utf-8"))
+
+
+async def _run_topic_generation(job_id, manifest, screenshots, slot_ids, filters, top_k):
+    # ponytail: process-local jobs only support one llmebm instance; move to a durable queue before multi-instance deployment.
+    topic_content_db.update_job(job_id, "running")
+    try:
+        public_manifest = _public_topic_manifest(manifest)
+        response = await asyncio.to_thread(
+            _post_topic_generation,
+            {
+                "manifest": public_manifest,
+                "screenshots": screenshots,
+                "only_slot_ids": slot_ids,
+                "filters": filters,
+                "top_k": top_k,
+            },
+        )
+        if not isinstance(response, dict) or not isinstance(response.get("sections"), list):
+            raise RuntimeError("ebm-rag returned an invalid Topic content response.")
+        if response.get("manifest_hash") != manifest["dom_hash"]:
+            raise RuntimeError("ebm-rag response manifest hash did not match the current request.")
+        plan = response.get("plan")
+        requested_slots = set(slot_ids)
+        returned_slots = set()
+        local_errors = []
+        for section in response["sections"]:
+            if not isinstance(section, dict) or section.get("slot_id") not in requested_slots:
+                local_errors.append({"status": "invalid_response", "message": "ebm-rag returned an unrequested slot."})
+                continue
+            returned_slots.add(section["slot_id"])
+            try:
+                topic_content_db.save_section_result(
+                    manifest["topic_uid"], manifest["dom_hash"], section, plan=plan
+                )
+            except (TypeError, ValueError, KeyError) as exc:
+                failed = {"slot_id": section.get("slot_id", "unknown"), "status": "failed", "error": str(exc)}
+                topic_content_db.save_section_result(manifest["topic_uid"], manifest["dom_hash"], failed, plan=plan)
+                local_errors.append({"slot_id": section["slot_id"], "status": "invalid_response", "message": str(exc)})
+        for missing_slot in requested_slots - returned_slots:
+            local_errors.append({"slot_id": missing_slot, "status": "missing_response"})
+        response_errors = [*(response.get("errors") or []), *local_errors]
+        topic_content_db.update_job(job_id, "completed_with_errors" if response_errors else "completed", response_errors)
+    except Exception as exc:
+        topic_content_db.update_job(job_id, "failed", {"message": str(exc)})
+
+
+@app.get("/api/v1/topic/{topic_name}/manifest")
+async def get_topic_manifest(topic_name: str):
+    return {"status": "success", "manifest": _public_topic_manifest(_ensure_topic_manifest(topic_name))}
+
+
+@app.get("/api/v1/topic/{topic_name}/content/status")
+async def get_topic_content_status(topic_name: str):
+    manifest = _ensure_topic_manifest(topic_name)
+    return {
+        "status": "success",
+        "topic_uid": manifest["topic_uid"],
+        **topic_content_db.status_for_topic(manifest["topic_uid"], manifest),
+    }
+
+
+@app.get("/api/v1/topic/{topic_name}/content/{slot_id}")
+async def get_topic_content(topic_name: str, slot_id: str):
+    manifest = _ensure_topic_manifest(topic_name)
+    allowed = {slot["slot_id"] for slot in manifest["slots"]}
+    if slot_id not in allowed:
+        raise HTTPException(status_code=404, detail="Unknown content slot.")
+    result = topic_content_db.get_current_content(manifest["topic_uid"], slot_id)
+    if not result:
+        return JSONResponse(status_code=404, content={"status": "empty", "slot_id": slot_id})
+    return {"slot_id": slot_id, **result}
+
+
+@app.post("/api/v1/topic/{topic_name}/content/generate")
+async def generate_topic_content(topic_name: str, payload: TopicGenerateRequest, http_request: Request):
+    if not generation_request_authorized(
+        http_request.client.host if http_request.client else "",
+        http_request.headers.get("X-LLMEBM-Topic-Token"),
+    ):
+        raise HTTPException(status_code=403, detail="Topic generation is not authorized.")
+    manifest = _ensure_topic_manifest(topic_name)
+    if payload.top_k < 1 or payload.top_k > 25:
+        raise HTTPException(status_code=400, detail="top_k must be between 1 and 25.")
+    allowed = {slot["slot_id"] for slot in manifest["slots"] if slot.get("content_target", True)}
+    if payload.only_slot_ids:
+        unknown = set(payload.only_slot_ids) - allowed
+        if unknown:
+            raise HTTPException(status_code=400, detail=f"Unknown slot IDs: {sorted(unknown)}")
+        slot_ids = list(dict.fromkeys(payload.only_slot_ids))
+    else:
+        statuses = topic_content_db.status_for_topic(manifest["topic_uid"], manifest)["slots"]
+        slot_ids = [
+            slot["slot_id"] for slot in manifest["slots"]
+            if payload.force or statuses[slot["slot_id"]]["status"] in {"empty", "stale", "failed"}
+        ]
+    if not slot_ids:
+        return {"status": "unchanged", "message": "No empty, stale, or failed slots require generation."}
+    try:
+        screenshots = load_screenshot_payloads(manifest)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    job_id = topic_content_db.create_job(manifest["topic_uid"], manifest["dom_hash"], slot_ids)
+    asyncio.create_task(_run_topic_generation(job_id, manifest, screenshots, slot_ids, payload.filters, payload.top_k))
+    return JSONResponse(status_code=202, content={"status": "accepted", "job_id": job_id, "slot_ids": slot_ids})
 
 @app.get("/api/health")
 async def health_check():
@@ -421,7 +602,11 @@ async def create_sidebar_node(topic_name: str, node: SidebarNodeCreate):
     """新增 Specialized Features 節點"""
     try:
         new_id = sidebar_db.add_custom_node(topic_name, node.parent_id, node.name)
-        return {"status": "success", "message": "Node added.", "node_id": new_id}
+        manifest = _mark_topic_manifest_dirty(topic_name)
+        return {
+            "status": "success", "message": "Node added.", "node_id": new_id,
+            "scan_required": True, "dom_hash": manifest["dom_hash"],
+        }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -429,8 +614,12 @@ async def create_sidebar_node(topic_name: str, node: SidebarNodeCreate):
 async def delete_sidebar_node(node_id: int):
     """刪除 Specialized Features 節點"""
     try:
-        sidebar_db.delete_custom_node(node_id)
-        return {"status": "success", "message": "Node deleted."}
+        topic_name = sidebar_db.delete_custom_node(node_id)
+        manifest = _mark_topic_manifest_dirty(topic_name)
+        return {
+            "status": "success", "message": "Node deleted.",
+            "scan_required": True, "dom_hash": manifest["dom_hash"],
+        }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

@@ -608,6 +608,28 @@ class ClinicalGuardWindow:
         self._write_icd_sidecar()
         self.status_var.set(f"已套用{case.get('label', '')} demo 情境，可送出 EBM 審查。")
 
+        # 🚀 [新增] 模擬按鍵：填完文字後自動觸發 Ctrl+Alt+G 擷取送審
+        try:
+            import win32api
+            import win32con
+            import time
+            
+            # 強制刷新 Tkinter UI，確保文字已經畫在螢幕上
+            self.root.update()
+            time.sleep(0.2)
+            
+            # 模擬按下 Ctrl (VK_CONTROL) + Alt (VK_MENU) + G
+            win32api.keybd_event(win32con.VK_CONTROL, 0, 0, 0)
+            win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
+            win32api.keybd_event(ord('G'), 0, 0, 0)
+            win32api.keybd_event(ord('G'), 0, win32con.KEYEVENTF_KEYUP, 0)
+            win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
+            win32api.keybd_event(win32con.VK_CONTROL, 0, win32con.KEYEVENTF_KEYUP, 0)
+            
+            self.status_var.set(f"已套用{case.get('label', '')}並自動發起 EBM 審查。")
+        except Exception as e:
+            self.status_var.set(f"自動送審失敗（模擬快捷鍵異常）: {e}")
+
     def _toggle_debug(self) -> None:
         self.debug_visible = not self.debug_visible
         if self.debug_visible:

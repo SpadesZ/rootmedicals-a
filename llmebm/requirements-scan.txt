@@ -1,0 +1,2 @@
+# Scanner-only dependency; do not install in the llmebm runtime image.
+scrapling[fetchers]

@@ -63,6 +63,23 @@ foreach ($conn in $connections) {
 
 Start-Sleep -Milliseconds 500
 $remaining = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+
+# 保底：如果命令列比對沒抓到（例如上一輪啟動洩漏的殘留行程、command line 讀不到），
+# 但佔用 $Port 的行程本身就是 python/pythonw，仍視為我們的 server 殘留並收掉，
+# 讓下一次啟動不會因為埠口被舊行程卡住而失敗。只針對本埠口的 python 映像，不動其他服務。
+foreach ($conn in $remaining) {
+    $owner = [int]$conn.OwningProcess
+    $proc = Get-Process -Id $owner -ErrorAction SilentlyContinue
+    if ($null -ne $proc -and $proc.ProcessName -in @("python", "pythonw")) {
+        if (Stop-ProcessIfRunning -ProcessId $owner) {
+            Write-Step "Stopped leaked python holding port $Port (PID $owner)."
+            $stopped = $true
+        }
+    }
+}
+
+Start-Sleep -Milliseconds 300
+$remaining = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
 if ($remaining) {
     Write-Host "[LLMXX] Port $Port is still listening, but no safe llmxx-server process was stopped." -ForegroundColor Yellow
     Write-Host "[LLMXX] I left it alone because it may belong to another service." -ForegroundColor Yellow

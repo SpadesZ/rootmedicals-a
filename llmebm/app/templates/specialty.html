@@ -40,15 +40,20 @@
 
         .sb-group-header { padding: 5px 15px; background: #eee; color: #666; font-size: 11px; font-weight: bold; text-transform: uppercase; margin-top: 10px; }
         .sb-node { padding-left: 15px; }
-        .sb-title { padding: 8px 15px; cursor: pointer; color: #333; font-size: 14px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        .sb-title { padding: 0 10px 0 15px; color: #333; font-size: 14px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
         .sb-title:hover { background-color: #f0f8fa; }
         .sb-title.layer-1 { font-weight: bold; border-left: 4px solid transparent; }
         .sb-title.layer-1.active-node { border-left-color: #006e82; background-color: #e6f4f6; }
+        .sb-select, .sb-expand { border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+        .sb-select { flex: 1; padding: 8px 0; text-align: left; }
+        .sb-select[aria-current="true"], .sb-leaf[aria-current="true"] { color: #006e82; font-weight: bold; }
+        .sb-select:focus-visible, .sb-expand:focus-visible, .sb-leaf:focus-visible { outline: 2px solid #006e82; outline-offset: 2px; }
+        .sb-expand { min-width: 32px; min-height: 32px; }
         .sb-icon { font-size: 10px; color: #f39c12; font-weight: bold; transition: transform 0.2s; }
         .sb-title.expanded .sb-icon { transform: rotate(90deg); }
         .sb-children { display: none; background: #fff; }
         .sb-children.show { display: block; }
-        .sb-leaf { color: #555; text-decoration: none; display: block; padding: 6px 15px 6px 30px; font-size: 13.5px; border-bottom: 1px solid #f5f5f5;}
+        .sb-leaf { width: 100%; border: 0; text-align: left; background: transparent; cursor: pointer; color: #555; text-decoration: none; display: block; padding: 6px 15px 6px 30px; font-size: 13.5px; border-bottom: 1px solid #f5f5f5;}
         .sb-leaf:hover { color: #006e82; background-color: #f9f9f9; }
 
         #pane-middle { flex-basis: 55%; flex-grow: 1; padding: 0; position: relative;}
@@ -66,8 +71,8 @@
         
         .topic-editors { font-size: 13px; color: #555; }
         .topic-tabs { display: flex; gap: 20px; border-bottom: 1px solid #ddd; margin-top: 20px; }
-        .topic-tabs div { padding: 10px 0; font-weight: bold; color: #666; cursor: pointer; border-bottom: 3px solid transparent;}
-        .topic-tabs div.active { color: #333; border-bottom-color: #f39c12; }
+        .topic-tabs button { padding: 10px 0; font-weight: bold; color: #666; cursor: pointer; border: 0; border-bottom: 3px solid transparent; background: transparent;}
+        .topic-tabs button.active { color: #333; border-bottom-color: #f39c12; }
         
         .mock-content h3 { color: #006e82; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 30px;}
         .mock-content p { line-height: 1.6; color: #444; font-size: 15px; }
@@ -81,7 +86,7 @@
         .pane-hidden { display: none !important; }
     </style>
 </head>
-<body>
+<body data-topic-name="{{ topic_name | e }}" data-topic-uid="{{ topic_uid | e }}">
 
     {% include '_header.html' %}
     
@@ -124,13 +129,13 @@
                     <div class="topic-meta">CONDITION • Updated May 2026</div>
                     <h1 class="topic-title">{{ topic_name }} <span class="topic-uid" title="Global Specialty Hierarchical UID">{{ topic_uid }}</span></h1>
                     <div class="topic-editors">Editors: Nancie MacIver MD, PhD; Scott A. Barron MD...</div>
-                    <div class="topic-tabs"><div class="active">Topic</div><div>Updates</div><div>Images</div><div>Tables</div></div>
+                    <div class="topic-tabs" role="tablist" aria-label="Topic views"><button type="button" class="active" role="tab" aria-selected="true">Topic</button><button type="button" role="tab" aria-selected="false">Updates</button><button type="button" role="tab" aria-selected="false">Images</button><button type="button" role="tab" aria-selected="false">Tables</button></div>
                 </div>
 
-                <div class="mock-content" id="main-reading-content">
+                <article id="main-reading-content" data-active-slot-id="" aria-live="polite" aria-busy="false">
                     <h3>Waiting for selection</h3>
                     <p>Select a topic from the sidebar to view detailed information.</p>
-                </div>
+                </article>
             </div>
         </main>
 
@@ -156,6 +161,7 @@
     </div>
 
     <script src="/static/js/app.js"></script>
+    <script src="/static/js/topic_content.js"></script>
 
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
@@ -233,7 +239,7 @@
                 const json = await res.json();
                 
                 if (json.status === 'success') {
-                    container.innerHTML = '';
+                    container.replaceChildren();
                     
                     if(json.tree.universal) {
                         renderSidebar(json.tree.universal, container);
@@ -249,7 +255,10 @@
                     }
                 }
             } catch (err) {
-                container.innerHTML = `<div style="padding:20px; color:red;">Failed to load sidebar structure.</div>`;
+                const failure = document.createElement('div');
+                failure.style.cssText = 'padding:20px;color:red';
+                failure.textContent = 'Failed to load sidebar structure.';
+                container.replaceChildren(failure);
             }
 
             function renderSidebar(nodes, parentEl) {
@@ -257,65 +266,79 @@
                     const isGroup = node.children && node.children.length > 0;
                     const nodeDiv = document.createElement('div');
                     nodeDiv.className = 'sb-node';
+                    nodeDiv.dataset.slotId = node.slot_id;
+                    nodeDiv.dataset.slotLevel = String(node.layer);
+                    nodeDiv.dataset.contentStatus = node.content_status || 'empty';
 
                     if (isGroup) {
                         const titleDiv = document.createElement('div');
                         titleDiv.className = `sb-title layer-${node.layer}`;
-                        titleDiv.innerHTML = `<span>${node.name}</span><span class="sb-icon">❯</span>`;
+                        const selectButton = document.createElement('button');
+                        selectButton.type = 'button';
+                        selectButton.className = 'sb-select';
+                        selectButton.textContent = node.name;
+                        setSlotAttributes(selectButton, node);
+
+                        const expandButton = document.createElement('button');
+                        expandButton.type = 'button';
+                        expandButton.className = 'sb-expand sb-icon';
+                        expandButton.textContent = '❯';
+                        expandButton.setAttribute('aria-label', `Expand ${node.name}`);
+                        expandButton.setAttribute('aria-expanded', 'false');
                         
                         const childrenContainer = document.createElement('div');
-                        childrenContainer.className = 'sb-children'; // 預設收合
+                        childrenContainer.className = 'sb-children';
+                        childrenContainer.id = `children-${node.slot_id.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+                        expandButton.setAttribute('aria-controls', childrenContainer.id);
                         
                         renderSidebar(node.children, childrenContainer);
                         
-                        titleDiv.addEventListener('click', () => {
+                        expandButton.addEventListener('click', () => {
                             const isExpanded = titleDiv.classList.contains('expanded');
                             if (isExpanded) {
                                 titleDiv.classList.remove('expanded');
                                 childrenContainer.classList.remove('show');
+                                expandButton.setAttribute('aria-expanded', 'false');
                             } else {
                                 titleDiv.classList.add('expanded');
                                 childrenContainer.classList.add('show');
+                                expandButton.setAttribute('aria-expanded', 'true');
                             }
                         });
-                        
+
+                        window.TopicContent.bindSlotButton(selectButton, node);
+                        titleDiv.appendChild(selectButton);
+                        titleDiv.appendChild(expandButton);
                         nodeDiv.appendChild(titleDiv);
                         nodeDiv.appendChild(childrenContainer);
                     } else {
-                        const leafLink = document.createElement('a');
-                        leafLink.href = "#";
+                        const leafLink = document.createElement('button');
+                        leafLink.type = 'button';
                         leafLink.className = `sb-leaf layer-${node.layer}`;
                         leafLink.textContent = node.name;
-                        
-                        leafLink.addEventListener('click', (e) => {
-                            e.preventDefault();
-                            document.querySelectorAll('.sb-leaf').forEach(l => l.style.fontWeight = 'normal');
-                            leafLink.style.fontWeight = 'bold';
-                            
-                            // 模擬 RAG 自動填充：點擊 Sidebar 標題，中間內文動態改變
-                            document.getElementById('main-reading-content').innerHTML = `
-                                <h3>${node.name}</h3>
-                                <div style="background:#e8f4f8; border-left:4px solid #006e82; padding:10px; margin-bottom:15px; font-size:13px; color:#555;">
-                                    <b>[RAG System Info]</b> Knowledge retrieved via UID: ${topicName} / ${node.name}
-                                </div>
-                                <p>This section is automatically populated by the EBM-RAG engine based on the prompt slot generated by the sidebar title: <b>${node.name}</b>.</p>
-                                <p>Future updates will ingest corresponding medical literature dynamically into this view.</p>
-                            `;
-                        });
-                        
+                        setSlotAttributes(leafLink, node);
+                        window.TopicContent.bindSlotButton(leafLink, node);
                         nodeDiv.appendChild(leafLink);
                     }
                     parentEl.appendChild(nodeDiv);
                 });
             }
 
+            function setSlotAttributes(element, node) {
+                element.dataset.slotId = node.slot_id;
+                element.dataset.slotLevel = String(node.layer);
+                element.dataset.contentStatus = node.content_status || 'empty';
+            }
+
             document.getElementById('btn-expand-all').addEventListener('click', () => {
                 document.querySelectorAll('.sb-title').forEach(t => t.classList.add('expanded'));
+                document.querySelectorAll('.sb-expand').forEach(t => t.setAttribute('aria-expanded', 'true'));
                 document.querySelectorAll('.sb-children').forEach(c => c.classList.add('show'));
             });
 
             document.getElementById('btn-collapse-all').addEventListener('click', () => {
                 document.querySelectorAll('.sb-title').forEach(t => t.classList.remove('expanded'));
+                document.querySelectorAll('.sb-expand').forEach(t => t.setAttribute('aria-expanded', 'false'));
                 document.querySelectorAll('.sb-children').forEach(c => c.classList.remove('show'));
             });
         });

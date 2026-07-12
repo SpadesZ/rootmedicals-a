@@ -12,12 +12,15 @@
 #              supports_chat=True；supports_embedding=True。embedding 回傳依 index 排序，交由 Core2 驗證契約。
 # ----------------------------------------------------------------------------------------------------
 
+import base64
+
 import httpx
 from lava.adapter.base import BaseLavaAdapter
 
 class OpenAICompatibleAdapter(BaseLavaAdapter):
     supports_chat = True
     supports_embedding = True
+    supports_vision = True
 
     def __init__(self, provider: str, base_url: str):
         self.provider = provider
@@ -57,6 +60,28 @@ class OpenAICompatibleAdapter(BaseLavaAdapter):
                 return {"content": content, "model": model_id, "provider": self.provider}
         except Exception as e:
             raise RuntimeError(self.safe_error(e, api_key)) from None
+
+    async def vision(self, api_key: str, model_id: str, prompt: str, images: list,
+                     temperature: float = 0.0, max_tokens: int = 2048) -> dict:
+        try:
+            normalized = self.validate_vision_images(images)
+            content = [{"type": "text", "text": str(prompt or "")}]
+            for image in normalized:
+                encoded = base64.b64encode(image["data"]).decode("ascii")
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{image['mime_type']};base64,{encoded}"},
+                })
+            messages = [{"role": "user", "content": content}]
+            return await self.chat(
+                api_key,
+                model_id,
+                messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        except Exception as error:
+            raise RuntimeError(self.safe_error(error, api_key)) from None
 
     async def embed(self, api_key: str, model_id: str, texts: list) -> list:
         try:

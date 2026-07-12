@@ -1,4 +1,4 @@
-﻿# 檔案路徑: rootmedicals-a/llmxx-client/apps/thin-capture-client/Setup-ThinCapture-Environment.ps1
+# 檔案路徑: rootmedicals-a/llmxx-client/apps/thin-capture-client/Setup-ThinCapture-Environment.ps1
 # 產生時間: 2026-06-17 21:35 +08:00
 # 版本: v0.2-薄客戶端整理
 # 說明: 建立或修復 thin capture client 的本機 Python 虛擬環境。
@@ -33,9 +33,9 @@ function Write-Step {
 function Resolve-BasePython {
     $pyLauncher = Get-Command py.exe -ErrorAction SilentlyContinue
     if ($pyLauncher) {
-        & py -3.10 -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)" 2>$null
+        & py -3 -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)" 2>$null
         if ($LASTEXITCODE -eq 0) {
-            return @("py", "-3.10")
+            return @("py", "-3")
         }
     }
 

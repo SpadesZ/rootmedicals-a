@@ -1,22 +1,8 @@
-﻿# 檔案路徑: rootmedicals-a/RootMedicals-Control.ps1
-# 產生時間: 2026-06-25 15:35 +08:00
-# 版本: v0.3-控制台主題入口
-# 說明: RootMedicals-A 單一控制入口，用於啟停 server、thin capture client、HIS 與 RAG/LAVA，
-#       並在啟動模式前選擇醫師提醒浮窗主題。這支腳本是交付時建議使用的唯一入口，
-#       讓操作者不需要分別記住 server/client/RAG 的多支啟動腳本。
-# 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
-# ----------------------------------------------------------------------------------------------------
-# 版本紀錄:
-# - v0.1: 建立 WinForms 控制台，集中 Live/DemoFixture/Stop/RAG 啟動。
-# - v0.2: 指向 thin-capture-client；client 只截圖送出，OCR/RAG 由後端執行。
-# - v0.3: 啟動 Live/Live+Synthetic/DemoFixture 前加入白色、微軟黑、黑色三種提醒浮窗主題選擇。
-# 安全筆記:
-# - 只呼叫 rootmedicals-a 內的啟停腳本，不修改 API key、LAVA binding、RAG 資料或病歷資料。
-# - 主題選擇只透過 ROOTMEDICALS_ALERT_THEME 傳給 thin capture client，不影響 server 判斷或燈號邏輯。
-# ----------------------------------------------------------------------------------------------------
+﻿# 檔案路徑: rootmedicals-a/llmxx-client/RootMedicals-Control.ps1
+# 說明: 醫師端控制台 GUI，專門對接已部署至 GCP VM 的後端服務。
 
 param(
-    [ValidateSet("Gui", "Status", "Live", "LiveSynthetic", "DemoFixture", "Stop", "StartRag")]
+    [ValidateSet("Gui", "Status", "Live", "LiveSynthetic", "DemoFixture", "Stop")]
     [string]$Action = "Gui",
     [ValidateSet("white", "microsoft_dark", "black")]
     [string]$AlertTheme = "white"
@@ -25,19 +11,16 @@ param(
 $ErrorActionPreference = "Stop"
 
 $RootDir = (Resolve-Path -LiteralPath (Split-Path -Parent $PSCommandPath)).Path
-$ServerDir = Join-Path $RootDir "llmxx-server"
-$ClientDir = Join-Path $RootDir "llmxx-client\apps\thin-capture-client"
-$ClinicalDir = Join-Path $RootDir "llmxx-client\apps\clinicalguard-standalone"
-$RagComposePath = Join-Path $RootDir "ebm-rag\docker-compose-rag.yml"
-$ServerStart = Join-Path $ServerDir "scripts\Start-LLMXX-Server.ps1"
-$ServerStop = Join-Path $ServerDir "scripts\Stop-LLMXX-Server.ps1"
+$ClientDir = Join-Path $RootDir "apps\thin-capture-client"
+$ClinicalDir = Join-Path $RootDir "apps\clinicalguard-standalone"
 $ClientStart = Join-Path $ClientDir "Start-ThinCapture-System.ps1"
 $ClientStop = Join-Path $ClientDir "Stop-ThinCapture-System.ps1"
 $ClientStatePath = Join-Path $ClientDir "runtime\thin_capture_processes.json"
-$ServerHealthUrl = "http://127.0.0.1:8017/api/health"
-$DoctorViewerUrl = "http://127.0.0.1:8017/demo/latest"
-$RagHealthUrl = "http://127.0.0.1:33301/api/v1/rag/health"
-$RagAdminUrl = "http://127.0.0.1:33301/admin"
+
+# 後端 VM 的 HTTPS 網址
+$ServerBaseUrl = "https://34.81.196.75.sslip.io"
+$ServerHealthUrl = "$ServerBaseUrl/api/health"
+$DoctorViewerUrl = "$ServerBaseUrl/demo/latest"
 
 function Add-LogLine {
     param(
@@ -62,13 +45,9 @@ function Get-RecentLogSummary {
         try {
             $tail = (Get-Content -LiteralPath $path -Tail 24 -ErrorAction Stop) -join "`n"
             if (-not [string]::IsNullOrWhiteSpace($tail)) {
-                # 維護筆記:
-                # 控制面板是給現場 demo 用的，失敗訊息不能只說 failed。
-                # 這裡只抓固定 runtime log 的尾端，不碰病歷 payload 或 API key。
                 $parts += "[$path]`n$tail"
             }
-        } catch {
-        }
+        } catch {}
     }
     if ($parts.Count -eq 0) {
         return ""
@@ -94,10 +73,7 @@ function Invoke-LocalProcess {
     $process = [System.Diagnostics.Process]::Start($startInfo)
     $completed = $process.WaitForExit([Math]::Max(1, $TimeoutSeconds) * 1000)
     if (-not $completed) {
-        try {
-            $process.Kill()
-        } catch {
-        }
+        try { $process.Kill() } catch {}
         throw "Process timed out after $TimeoutSeconds seconds: $FilePath"
     }
     return [ordered]@{
@@ -109,16 +85,10 @@ function Invoke-LocalProcess {
 
 function ConvertTo-CommandLineArgument {
     param([string]$Value)
-    if ($null -eq $Value) {
-        return '""'
-    }
+    if ($null -eq $Value) { return '""' }
     $escaped = [string]$Value
-    if ($escaped.Length -eq 0) {
-        return '""'
-    }
-    if ($escaped -notmatch '[\s"]') {
-        return $escaped
-    }
+    if ($escaped.Length -eq 0) { return '""' }
+    if ($escaped -notmatch '[\s"]') { return $escaped }
     return '"' + ($escaped -replace '\\', '\\' -replace '"', '\"') + '"'
 }
 
@@ -134,6 +104,7 @@ function Invoke-ProjectPowerShell {
 function Get-JsonOrNull {
     param([string]$Url)
     try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
         $response = Invoke-RestMethod -Uri $Url -Method Get -TimeoutSec 3
         if ($null -ne $response -and $response -is [string]) {
             return $response | ConvertFrom-Json
@@ -146,15 +117,12 @@ function Get-JsonOrNull {
 
 function Test-PidRunning {
     param([int]$PidValue)
-    if ($PidValue -le 0) {
-        return $false
-    }
+    if ($PidValue -le 0) { return $false }
     return $null -ne (Get-Process -Id $PidValue -ErrorAction SilentlyContinue)
 }
 
 function Get-RootMedicalsStatus {
     $server = Get-JsonOrNull -Url $ServerHealthUrl
-    $rag = Get-JsonOrNull -Url $RagHealthUrl
     $clientRunning = $false
     $clientMode = "unknown"
     if (Test-Path -LiteralPath $ClientStatePath) {
@@ -163,8 +131,6 @@ function Get-RootMedicalsStatus {
             $trayPid = 0
             if ($state.PSObject.Properties.Name -contains "capture_tray_pid") {
                 $trayPid = [int]$state.capture_tray_pid
-            } elseif ($state.PSObject.Properties.Name -contains "ocr_tray_pid") {
-                $trayPid = [int]$state.ocr_tray_pid
             }
             $clientRunning = Test-PidRunning -PidValue $trayPid
             if ($state.PSObject.Properties.Name -contains "demo_fixture_payload_marker") {
@@ -181,29 +147,18 @@ function Get-RootMedicalsStatus {
     $serverOnline = $null -ne $server -and [bool]$server.ok
     $serverMode = "offline"
     if ($serverOnline) {
-        $serverMode = "Live RAG"
+        $serverMode = "Live RAG (VM)"
         if ($server.checks -and ($server.checks.PSObject.Properties.Name -contains "demo_fixture") -and [string]$server.checks.demo_fixture -eq "enabled") {
-            $serverMode = "Demo Fixture"
-        } elseif ($server.checks -and ($server.checks.PSObject.Properties.Name -contains "rag_synthetic_fallback") -and [string]$server.checks.rag_synthetic_fallback -eq "enabled") {
-            $serverMode = "Live RAG + Synthetic"
+            $serverMode = "Demo Fixture (VM)"
         }
     }
 
-    $ragReady = $false
-    if ($null -ne $rag) {
-        if ($rag.PSObject.Properties.Name -contains "ready") {
-            $ragReady = [bool]$rag.ready
-        } elseif ($rag.PSObject.Properties.Name -contains "readiness" -and $rag.readiness -and ($rag.readiness.PSObject.Properties.Name -contains "ready")) {
-            $ragReady = [bool]$rag.readiness.ready
-        }
-    }
     return [ordered]@{
         ServerOnline = $serverOnline
         ServerMode = $serverMode
         ClientRunning = $clientRunning
         ClientMode = $clientMode
-        RagReady = $ragReady
-        RagStatus = if ($null -eq $rag) { "offline" } elseif ($ragReady) { "ready" } else { "not ready" }
+        RagStatus = if ($serverOnline) { "ready (VM)" } else { "offline" }
     }
 }
 
@@ -213,39 +168,21 @@ function Stop-ServerAndClient {
     if (Test-Path -LiteralPath $ClientStop) {
         [void](Invoke-ProjectPowerShell -ScriptPath $ClientStop)
     }
-    Add-LogLine "Stopping llmxx-server..." $LogBox
-    if (Test-Path -LiteralPath $ServerStop) {
-        [void](Invoke-ProjectPowerShell -ScriptPath $ServerStop)
-    }
-    Add-LogLine "Stopped server/client stack." $LogBox
+    Add-LogLine "Stopped thin capture/HIS." $LogBox
 }
 
 function Start-Mode {
     param(
-        [ValidateSet("Live", "LiveSynthetic", "DemoFixture")][string]$Mode,
+        [ValidateSet("Live", "DemoFixture")][string]$Mode,
         [ValidateSet("white", "microsoft_dark", "black")][string]$AlertTheme = "white",
         $LogBox = $null
     )
     Stop-ServerAndClient -LogBox $LogBox
-    $serverArgs = @("-NoBrowser")
     $clientArgs = @()
     if ($Mode -eq "DemoFixture") {
-        $serverArgs += "-DemoFixture"
         $clientArgs += "-DemoFixture"
-    } elseif ($Mode -eq "LiveSynthetic") {
-        $serverArgs += "-SyntheticFallback"
     }
     $clientArgs += @("-AlertTheme", $AlertTheme)
-    Add-LogLine "Starting llmxx-server in $Mode mode..." $LogBox
-    $serverResult = Invoke-ProjectPowerShell -ScriptPath $ServerStart -ExtraArgs $serverArgs
-    if ($serverResult.ExitCode -ne 0) {
-        $serverLogs = Get-RecentLogSummary -Paths @(
-            (Join-Path $ServerDir "data\llmxx_server_8017.err.log"),
-            (Join-Path $ServerDir "data\uvicorn_8017.err.log"),
-            (Join-Path $ServerDir "data\llmxx_server_8017.out.log")
-        )
-        throw "llmxx-server start failed:`n$serverLogs"
-    }
     Add-LogLine "Starting ClinicalGuard + thin capture in $Mode mode, alert theme=$AlertTheme..." $LogBox
     $clientResult = Invoke-ProjectPowerShell -ScriptPath $ClientStart -ExtraArgs $clientArgs
     if ($clientResult.ExitCode -ne 0) {
@@ -258,25 +195,7 @@ function Start-Mode {
         )
         throw "Thin capture start failed:`n$clientLogs"
     }
-    Add-LogLine "$Mode mode is ready." $LogBox
-}
-
-function Start-RagStack {
-    param($LogBox = $null)
-    if (-not (Test-Path -LiteralPath $RagComposePath)) {
-        throw "RAG compose file not found: $RagComposePath"
-    }
-    Add-LogLine "Starting RAG/LAVA Docker stack..." $LogBox
-    $result = Invoke-LocalProcess -FilePath "docker" -ArgumentList @("compose", "-f", $RagComposePath, "up", "-d") -WorkingDirectory (Split-Path -Parent $RagComposePath)
-    if ($result.ExitCode -ne 0) {
-        throw "Docker compose failed: $($result.StdErr)"
-    }
-    Add-LogLine "RAG/LAVA Docker stack start requested." $LogBox
-}
-
-function Open-Url {
-    param([string]$Url)
-    Start-Process $Url
+    Add-LogLine "$Mode mode is ready (connecting to GCP VM)." $LogBox
 }
 
 if ($Action -eq "Status") {
@@ -291,16 +210,8 @@ if ($Action -eq "Live") {
     Start-Mode -Mode "Live" -AlertTheme $AlertTheme
     exit 0
 }
-if ($Action -eq "LiveSynthetic") {
-    Start-Mode -Mode "LiveSynthetic" -AlertTheme $AlertTheme
-    exit 0
-}
 if ($Action -eq "DemoFixture") {
     Start-Mode -Mode "DemoFixture" -AlertTheme $AlertTheme
-    exit 0
-}
-if ($Action -eq "StartRag") {
-    Start-RagStack
     exit 0
 }
 
@@ -309,7 +220,7 @@ Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
 $form = [System.Windows.Forms.Form]::new()
-$form.Text = "RootMedicals Control"
+$form.Text = "RootMedicals Control (GCP Client)"
 $form.StartPosition = "CenterScreen"
 $form.Size = [System.Drawing.Size]::new(720, 530)
 $form.MinimumSize = [System.Drawing.Size]::new(660, 480)
@@ -323,7 +234,7 @@ $title.Size = [System.Drawing.Size]::new(520, 32)
 $form.Controls.Add($title)
 
 $subtitle = [System.Windows.Forms.Label]::new()
-$subtitle.Text = "One entry to switch Live RAG / Live + Synthetic / Demo Fixture, alert theme, and system status."
+$subtitle.Text = "Client entry pointing to VM backend. Start client tools and check status."
 $subtitle.Location = [System.Drawing.Point]::new(22, 55)
 $subtitle.Size = [System.Drawing.Size]::new(650, 24)
 $form.Controls.Add($subtitle)
@@ -354,7 +265,7 @@ $btnFixture.Size = [System.Drawing.Size]::new(170, 42)
 $form.Controls.Add($btnFixture)
 
 $btnStop = [System.Windows.Forms.Button]::new()
-$btnStop.Text = "Stop Server + Client"
+$btnStop.Text = "Stop Client"
 $btnStop.Location = [System.Drawing.Point]::new(22, 245)
 $btnStop.Size = [System.Drawing.Size]::new(150, 36)
 $form.Controls.Add($btnStop)
@@ -366,9 +277,10 @@ $btnRefresh.Size = [System.Drawing.Size]::new(120, 42)
 $form.Controls.Add($btnRefresh)
 
 $btnRag = [System.Windows.Forms.Button]::new()
-$btnRag.Text = "Start RAG/LAVA"
+$btnRag.Text = "RAG on GCP VM"
 $btnRag.Location = [System.Drawing.Point]::new(188, 245)
 $btnRag.Size = [System.Drawing.Size]::new(150, 36)
+$btnRag.Enabled = $false
 $form.Controls.Add($btnRag)
 
 $btnViewer = [System.Windows.Forms.Button]::new()
@@ -378,9 +290,10 @@ $btnViewer.Size = [System.Drawing.Size]::new(170, 36)
 $form.Controls.Add($btnViewer)
 
 $btnAdmin = [System.Windows.Forms.Button]::new()
-$btnAdmin.Text = "Open RAG Admin"
+$btnAdmin.Text = "Admin on GCP VM"
 $btnAdmin.Location = [System.Drawing.Point]::new(560, 245)
 $btnAdmin.Size = [System.Drawing.Size]::new(120, 36)
+$btnAdmin.Enabled = $false
 $form.Controls.Add($btnAdmin)
 
 $logBox = [System.Windows.Forms.TextBox]::new()
@@ -395,17 +308,17 @@ $form.Controls.Add($logBox)
 
 function Set-ButtonsEnabled {
     param([bool]$Enabled)
-    foreach ($button in @($btnLive, $btnDemo, $btnFixture, $btnStop, $btnRefresh, $btnRag, $btnViewer, $btnAdmin)) {
+    foreach ($button in @($btnLive, $btnFixture, $btnStop, $btnRefresh, $btnViewer)) {
         $button.Enabled = $Enabled
     }
 }
 
 function Refresh-StatusUi {
     $status = Get-RootMedicalsStatus
-    $serverText = if ($status.ServerOnline) { "online / $($status.ServerMode)" } else { "offline" }
+    $serverText = if ($status.ServerOnline) { "online / $($status.ServerMode)" } else { "offline (cannot reach VM)" }
     $clientText = if ($status.ClientRunning) { "running / $($status.ClientMode)" } else { "stopped" }
     $ragText = $status.RagStatus
-    $statusLabel.Text = " llmxx-server: $serverText`r`n Thin capture + HIS: $clientText`r`n RAG/LAVA: $ragText"
+    $statusLabel.Text = " llmxx-server (GCP VM): $serverText`r`n Thin capture + HIS: $clientText`r`n RAG/LAVA (GCP VM): $ragText"
 }
 
 function Run-UiAction {
@@ -489,7 +402,7 @@ function Show-AlertThemeDialog {
 }
 
 function Start-ModeFromUi {
-    param([ValidateSet("Live", "LiveSynthetic", "DemoFixture")][string]$Mode)
+    param([ValidateSet("Live", "DemoFixture")][string]$Mode)
     $theme = Show-AlertThemeDialog
     if ([string]::IsNullOrWhiteSpace($theme)) {
         Add-LogLine "Start cancelled before launch." $logBox
@@ -499,14 +412,12 @@ function Start-ModeFromUi {
 }
 
 $btnLive.Add_Click({ Start-ModeFromUi -Mode "Live" })
-$btnDemo.Add_Click({ Start-ModeFromUi -Mode "LiveSynthetic" })
+$btnDemo.Add_Click({ Start-ModeFromUi -Mode "Live" })
 $btnFixture.Add_Click({ Start-ModeFromUi -Mode "DemoFixture" })
 $btnStop.Add_Click({ Run-UiAction { Stop-ServerAndClient -LogBox $logBox } })
 $btnRefresh.Add_Click({ Run-UiAction { Add-LogLine "Status refreshed." $logBox } })
-$btnRag.Add_Click({ Run-UiAction { Start-RagStack -LogBox $logBox } })
 $btnViewer.Add_Click({ Open-Url -Url $DoctorViewerUrl })
-$btnAdmin.Add_Click({ Open-Url -Url $RagAdminUrl })
 
 Refresh-StatusUi
-Add-LogLine "Control panel ready." $logBox
+Add-LogLine "Control panel ready. Connected to VM: $ServerBaseUrl" $logBox
 [void]$form.ShowDialog()

@@ -12,6 +12,8 @@
 #              generateContent 用於 chat；embedContent 用於 embedding_dense；回應解析與錯誤訊息皆防禦處理。
 # ----------------------------------------------------------------------------------------------------
 
+import base64
+
 import httpx
 from lava.adapter.base import BaseLavaAdapter
 
@@ -27,6 +29,7 @@ class GoogleAdapter(BaseLavaAdapter):
     provider = "google"
     supports_chat = True
     supports_embedding = True
+    supports_vision = True
 
     async def fetch_models(self, api_key: str):
         try:
@@ -85,6 +88,48 @@ class GoogleAdapter(BaseLavaAdapter):
                 return {"content": content, "model": model_id, "provider": self.provider}
         except Exception as e:
             raise RuntimeError(self.safe_error(e, api_key)) from None
+
+    async def vision(self, api_key: str, model_id: str, prompt: str, images: list,
+                     temperature: float = 0.0, max_tokens: int = 2048) -> dict:
+        try:
+            normalized = self.validate_vision_images(images)
+            parts = [{"text": str(prompt or "")}]
+            for image in normalized:
+                parts.append({
+                    "inline_data": {
+                        "mime_type": image["mime_type"],
+                        "data": base64.b64encode(image["data"]).decode("ascii"),
+                    }
+                })
+            payload = {
+                "contents": [{"role": "user", "parts": parts}],
+                "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
+            }
+            async with httpx.AsyncClient(timeout=60) as client:
+                async def do_request():
+                    response = await client.post(
+                        f"{_GEMINI_BASE}/models/{model_id}:generateContent?key={api_key}",
+                        json=payload,
+                    )
+                    response.raise_for_status()
+                    return response
+                response = await self.request_with_retries(do_request, attempts=3)
+                data = response.json()
+            candidates = data.get("candidates", [])
+            if not candidates:
+                raise ValueError("Gemini vision response has no candidates")
+            text_parts = [
+                str(part.get("text", ""))
+                for part in candidates[0].get("content", {}).get("parts", [])
+                if isinstance(part, dict) and part.get("text")
+            ]
+            content = "\n".join(text_parts).strip()
+            if not content:
+                finish_reason = candidates[0].get("finishReason", "unknown")
+                raise ValueError(f"Gemini vision response has no text parts; finishReason={finish_reason}")
+            return {"content": content, "model": model_id, "provider": self.provider}
+        except Exception as error:
+            raise RuntimeError(self.safe_error(error, api_key)) from None
 
     async def embed(self, api_key: str, model_id: str, texts: list) -> list:
         try:

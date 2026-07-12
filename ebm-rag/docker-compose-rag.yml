@@ -26,6 +26,11 @@ services:
       - ./app:/app/app
       - ./main_rag.py:/app/main_rag.py
       - ./data:/app/data
+    # Keep the cross-service generation token identical to llmebm when this
+    # module compose file is started directly from ebm-rag/.
+    env_file:
+      - ../.env
+      - ../.env.topic
     environment:
       - ENV=development
       - PYTHONUNBUFFERED=1

@@ -21,12 +21,14 @@
 #                disease chunks before final gating.
 # ----------------------------------------------------------------------------------------------------
 
+import hmac
 import json
+import os
 import aiosqlite
 
-from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi import APIRouter, Body, HTTPException, Query, Request
 
-from rag_core.core5_api.schemas import QueryRequest, CheckRequest
+from rag_core.core5_api.schemas import QueryRequest, CheckRequest, TopicContentGenerateRequest
 from rag_core.common import state_db as sdb
 from rag_core.common.config import RAG_DB_PATH
 from rag_core.core3_vector_store.collections import collection_name
@@ -35,6 +37,7 @@ from rag_core.core1_ingestion.pipeline import run_ingestion
 from rag_core.core2_embeddings.pipeline import run_embedding_pipeline
 from rag_core.core3_vector_store.indexer import index_paper as qdrant_index
 from rag_core.core4_ragging.pipeline import run_query
+from rag_core.core4_ragging.topic_content import generate_topic_content
 from rag_core.common.chunk_quality import evaluate_chunk_quality
 from lava.task_registry import RAG_TASKS
 from lava.llm_model import LLMModel
@@ -244,6 +247,67 @@ def _raise_not_ready(readiness: dict):
     )
 
 
+async def _topic_readiness() -> dict:
+    base = await _rag_readiness(require_indexed_chunks=True)
+    required_task_ids = ("topic_content_plan", "embedding_dense", "topic_content_compose")
+    required_tasks = {}
+    reasons = []
+    for task_id in required_task_ids:
+        task = dict(base.get("lava", {}).get("tasks", {}).get(task_id, {}))
+        required_tasks[task_id] = {
+            "ready": bool(task.get("ready")),
+            "reason": task.get("reason"),
+            "capability": task.get("capability"),
+            "connection_id": task.get("connection_id"),
+        }
+        if not task.get("ready"):
+            reasons.append(f"{task_id}:{task.get('reason') or 'not_ready'}")
+
+    infrastructure_reasons = {
+        "sqlite_state_db_missing",
+        "qdrant_unavailable",
+        "no_indexed_chunks_for_active_embedding",
+        "active_embedding_collection_missing_in_qdrant",
+        "indexed_chunk_quality_gate_failed",
+    }
+    reasons.extend(reason for reason in base.get("reasons", []) if reason in infrastructure_reasons)
+    reasons = list(dict.fromkeys(reasons))
+    return {
+        "ready": not reasons,
+        "reasons": reasons,
+        "required_tasks": required_tasks,
+        "sqlite": base.get("sqlite"),
+        "qdrant": base.get("qdrant"),
+        "active_embedding_index": base.get("active_embedding_index"),
+    }
+
+
+def _raise_topic_not_ready(readiness: dict) -> None:
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "status": "not_ready",
+            "message": "Topic content generation requires ready vision planning, embedding retrieval, and composition tasks.",
+            "readiness": readiness,
+        },
+    )
+
+
+def _authorize_topic_content_request(request: Request) -> None:
+    configured_token = os.getenv("LLMEBM_TOPIC_GENERATION_TOKEN", "")
+    if configured_token:
+        supplied_token = request.headers.get("X-LLMEBM-Topic-Token", "")
+        if supplied_token and hmac.compare_digest(supplied_token, configured_token):
+            return
+        raise HTTPException(status_code=401, detail="Invalid or missing topic generation token")
+    client_host = str(getattr(getattr(request, "client", None), "host", "") or "").strip().lower()
+    if client_host not in {"127.0.0.1", "::1", "localhost"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Topic generation is loopback-only unless LLMEBM_TOPIC_GENERATION_TOKEN is configured",
+        )
+
+
 # ──────────────────────────────────────────────
 # GET /api/v1/rag/health
 # ──────────────────────────────────────────────
@@ -259,6 +323,37 @@ async def rag_health():
         "status": "ready" if readiness["ready"] else "not_ready",
         "readiness": readiness
     }
+
+
+@router.get("/topic-content/readiness")
+async def topic_content_readiness_endpoint():
+    return await _topic_readiness()
+
+
+@router.post("/topic-content/generate")
+async def generate_topic_content_endpoint(body: TopicContentGenerateRequest, request: Request):
+    from lava.matching_tasks.topic_content_plan import validate_topic_manifest
+
+    _authorize_topic_content_request(request)
+    try:
+        manifest = validate_topic_manifest(body.manifest)
+        target_ids = {slot["slot_id"] for slot in manifest["slots"] if slot["content_target"]}
+        unknown = set(body.only_slot_ids).difference(target_ids)
+        if unknown:
+            raise ValueError(f"only_slot_ids contains unknown or non-content slots: {', '.join(sorted(unknown))}")
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    readiness = await _topic_readiness()
+    if not readiness["ready"]:
+        _raise_topic_not_ready(readiness)
+    return await generate_topic_content(
+        manifest=manifest,
+        screenshots=[item.model_dump() for item in body.screenshots],
+        only_slot_ids=body.only_slot_ids,
+        filters=body.filters,
+        top_k=body.top_k,
+    )
 
 
 # ──────────────────────────────────────────────
