@@ -6,12 +6,15 @@
 # ----------------------------------------------------------------------------------------------------
 
 # 路徑: rootmedicals-a/llmebm/main_ebm.py
-# 版本: v1.6
-# 更版時間: 2026-05-09 20:00
+# 版本: v1.7
+# 更版時間: 2026-07-13 (analyze-soap 靜態假內容停用)
 # 說明: 
 #   1. 嚴格遵守人機協作第一定律：代碼行數只增不減，全量展開所有註解與文檔字串 (Docstrings)。
 #   2. 完整保留 v0.6 的所有基礎路由 (/admin, /, /api/health) 與錯誤攔截器。
-#   3. 完整保留 SSE 串流路由 (/api/v1/analyze-soap) 與 pipeline_event_generator。
+#   3. [v1.7 停用] /api/v1/analyze-soap + pipeline_event_generator 原本串流「寫死的 AAA
+#      監測綠燈/evidence 1a/假 DOI」假臨床結果（與真實 RAG 無關）。為符合能賣等級「來源
+#      可追、不許假內容」硬 gate 已停用：端點保留避免 index.html 舊按鈕 404，但不再輸出
+#      任何臨床判斷或紅綠燈。動態實證內容改由 Topic Page (/topic/...) 逐 slot 生成。
 #   4. 疊加 SQLite 資料庫模組 (ebm_model.py) 整合，確保持久化資料庫連線。
 #   5. [更新] /api/v1/specialties 與 /api/v1/specialties/{specialty_name}/tree 路由改呼叫 v2 函式以支援5層架構。
 #   6. 保留 /api/v1/settings 路由 (GET/POST)：供前端 Admin 讀寫全域品牌設定。
@@ -465,30 +468,22 @@ async def pipeline_event_generator(soap_text: str):
     await asyncio.sleep(0.2)
     
     reasoning_text = (
-        "Based on the retrieved guidelines, for an asymptomatic abdominal aortic aneurysm (AAA) "
-        "measuring 4.5cm, routine ultrasound surveillance is strongly recommended. "
-        "Surgical intervention is currently NOT indicated, as the risk of rupture is low compared "
-        "to operative mortality. Intervention threshold is typically >5.5cm."
+        "This static demo stream has been retired for sellable-grade rigor. "
+        "It no longer emits any clinical assessment or traffic-light result. "
+        "Evidence-backed content is now generated dynamically per topic section "
+        "on the Topic Page, with every claim traceable to a retrieved source."
     )
     
     for word in reasoning_text.split():
         yield f"data: {json.dumps({'status': 'streaming', 'token': word + ' '})}\n\n"
         await asyncio.sleep(0.08)
         
-    # 階段 4: 推播最終結構化的 EBM 決策與紅綠燈
+    # 已停用 (2026-07-13): 不再輸出寫死的臨床判斷、紅綠燈、evidence level 或假 DOI；
+    # 只回明確的停用狀態並導向動態 Topic Page。完整移除需一併拿掉 index.html 的
+    # #btn-analyze-soap 與 stream_client.js 的呼叫（列為後續小尾巴）。
     final_payload = {
-        "status": "complete",
-        "traffic_light": "Green",
-        "evidence_level": "1a",
-        "recommendation_grade": "A",
-        "dx_tx_summary": "Surveillance for AAA < 5.5cm",
-        "references": [
-            {
-                "title": "Society for Vascular Surgery practice guidelines on the care of patients with an AAA",
-                "doi": "10.1016/j.jvs.2017.10.044",
-                "match_score": 0.92
-            }
-        ]
+        "status": "removed",
+        "message": "Retired static demo path. Use the dynamic Topic Page for evidence-backed content.",
     }
     yield f"data: {json.dumps(final_payload)}\n\n"
 
