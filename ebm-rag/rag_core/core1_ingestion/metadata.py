@@ -1,19 +1,15 @@
-# 檔案路徑: rootmedicals-a/ebm-rag/rag_core/core1_ingestion/metadata.py
-# 產生時間: 2026-06-17 16:10 +08:00
-# 版本: v0.1-交付整理
-# 說明: RAG Core1 入庫層，負責 chunk、metadata 與語料轉換契約。
-# 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
-# ----------------------------------------------------------------------------------------------------
-
-# File Path: ebm-rag/rag_core/core1_ingestion/metadata.py
-# Timestamp: 2026-06-12
-# Version: v0.2
-# Description: Core1 Metadata 注入器。
-#              從 chunk 文字以 regex 啟發式抽取 PMID / DOI / 年份；
-#              外部 metadata 以白名單覆蓋，不確定欄位填 "unknown" 或 null，絕不使用 LLM 推測。
+# 模組定位: ebm-rag Core1 chunk metadata 注入與 evidence-scope 邊界。
+# 主要責任: 合併 allowlisted source metadata、抽取 PMID/DOI/year，並產出 topic_key/slot_keys。
+# 呼叫來源: rag_core/core1_ingestion/pipeline.py 的每個新 chunk。
+# 輸入契約: chunk payload 與 Core5 已過濾的 external_meta；可用 slot_keys_by_chunk 精準標註。
+# 輸出契約: 保留原 chunk 並加入 canonical topic/slot scope；缺 scope 時使用 conservative wildcard。
+# 安全邊界: 不以 LLM 或全文關鍵字猜疾病/slot；None/unknown 不覆蓋已知 bibliographic metadata。
+# 維護提醒: 新增 external metadata 欄位時需同步 Core5 allowlist 與 scope revision contract tests。
 # ----------------------------------------------------------------------------------------------------
 
 import re
+
+from rag_core.common.evidence_scope import normalize_evidence_scope
 
 def inject_metadata(chunk: dict, external_meta: dict = None) -> dict:
     """Inject known metadata from external source or PDF text heuristics."""
@@ -43,6 +39,23 @@ def inject_metadata(chunk: dict, external_meta: dict = None) -> dict:
         ext_val = external_meta.get(key)
         if ext_val not in (None, "unknown", ""):
             payload[key] = ext_val
+
+    scope_payload = dict(payload)
+    if "topic_key" in external_meta:
+        scope_payload["topic_key"] = external_meta["topic_key"]
+    slot_keys_by_chunk = external_meta.get("slot_keys_by_chunk")
+    if isinstance(slot_keys_by_chunk, dict):
+        chunk_scope = slot_keys_by_chunk.get(
+            str(chunk.get("chunk_id") or ""),
+            slot_keys_by_chunk.get(str(chunk.get("chunk_index", ""))),
+        )
+        if chunk_scope is not None:
+            scope_payload["slot_keys"] = chunk_scope
+    if "slot_keys" in external_meta and "slot_keys" not in scope_payload:
+        scope_payload["slot_keys"] = external_meta["slot_keys"]
+    topic_key, slot_keys = normalize_evidence_scope(scope_payload)
+    payload["topic_key"] = topic_key
+    payload["slot_keys"] = slot_keys
 
     chunk["payload"] = payload
     return chunk

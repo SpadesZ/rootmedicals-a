@@ -1,7 +1,10 @@
-# File Path: ebm-rag/lava/matching_tasks/topic_content_compose.py
-# Timestamp: 2026-07-11
-# Version: v0.1
-# Description: Evidence-only llmebm Topic block composer with deterministic citation/source gates.
+# 模組定位: retrieval-only llmebm Topic component JSON composer 與 source gate。
+# 主要責任: 將單一 slot evidence bundle 編排成 allowlisted blocks，驗證每個 citation。
+# 呼叫來源: Topic content orchestrator 與 LAVA topic_content_compose task。
+# 輸入契約: validated plan slot 與 llmebm-evidence-bundle.v1，不接受網頁原文或自由來源。
+# 輸出契約: llmebm-topic-content.v1 ready/insufficient result；citation 必須命中 bundle paper/chunk。
+# 安全邊界: 未引用/越界來源、HTML/URL、未知 block/field 皆拒絕；無 hits 不生成臨床文字。
+# 維護提醒: correction retry 保留完整前次 JSON；截斷 JSON 必須 clean retry，且仍經 deterministic validator。
 # ----------------------------------------------------------------------------------------------------
 
 import json
@@ -20,6 +23,7 @@ from lava.matching_tasks.topic_content_plan import (
 CONTENT_SCHEMA = "llmebm-topic-content.v1"
 EVIDENCE_SCHEMA = "llmebm-evidence-bundle.v1"
 _TEXT_BLOCK_TYPES = {"summary", "recommendations", "evidence_note", "warning"}
+_CONTENT_REQUIRED_KEYS = {"schema", "slot_id", "status", "blocks", "missing_evidence"}
 
 
 def _validate_citations(value: Any, evidence_refs: set[tuple[str, str]], path: str) -> list[dict]:
@@ -174,14 +178,25 @@ def validate_topic_content(section: dict, evidence_bundle: dict, content: Any, m
         if block_type not in ALLOWED_BLOCK_TYPES or block_type not in allowed_types:
             raise ValueError(f"{path}.type is not allowed by the section plan")
         if block_type in _TEXT_BLOCK_TYPES:
-            _exact_keys(block, {"type", "text", "citations"}, {"type", "text", "citations"}, path)
-            normalized_blocks.append({
+            optional_keys = (
+                {"recommendation_strength", "evidence_certainty"}
+                if block_type == "recommendations" else set()
+            )
+            _exact_keys(
+                block, {"type", "text", "citations", *optional_keys},
+                {"type", "text", "citations"}, path,
+            )
+            normalized_block = {
                 "type": block_type,
                 # ponytail: one short sourced statement per text block; use a
                 # claim-array schema if long-form synthesis is required later.
                 "text": _safe_text(block.get("text"), f"{path}.text", max_length=2000),
                 "citations": _validate_citations(block.get("citations"), evidence_refs, f"{path}.citations"),
-            })
+            }
+            for field in optional_keys:
+                if block.get(field) is not None:
+                    normalized_block[field] = _safe_text(block[field], f"{path}.{field}", max_length=80)
+            normalized_blocks.append(normalized_block)
         elif block_type == "bullets":
             _exact_keys(block, {"type", "items"}, {"type", "items"}, path)
             items = block.get("items")
@@ -242,6 +257,23 @@ def insufficient_evidence_content(section: dict, model: dict | None = None) -> d
     }
 
 
+def _load_content_candidate(raw_output: str) -> dict:
+    """Accept the exact content object or one provider/model `content` envelope."""
+    candidate = _load_json_object(raw_output)
+    wrapped = candidate.get("content")
+    # ponytail: unwrap one known envelope only when its child has the complete contract shape;
+    # recursive guessing could turn unrelated provider JSON into clinical content.
+    if isinstance(wrapped, dict) and _CONTENT_REQUIRED_KEYS.issubset(wrapped):
+        return wrapped
+    return candidate
+
+
+def _needs_clean_retry(result: dict, validation_error: str) -> bool:
+    """Return whether replaying the previous assistant text would replay a truncated object."""
+    finish_reason = str(result.get("finish_reason", "")).upper()
+    return finish_reason == "MAX_TOKENS" or "unterminated string" in validation_error.lower()
+
+
 async def execute_topic_content_compose(payload: dict) -> dict:
     if not isinstance(payload, dict):
         return {"status": "failed", "content": None, "error": "topic_content_compose payload must be an object"}
@@ -263,9 +295,61 @@ async def execute_topic_content_compose(payload: dict) -> dict:
     if not adapter or not adapter.supports_chat:
         return {"status": "failed", "content": None, "error": "Bound provider does not support chat"}
     model = {"provider": conn["provider"], "model_id": conn["model_id"]}
+    preferred_text_type = next(
+        (block_type for block_type in section.get("block_types", []) if block_type in _TEXT_BLOCK_TYPES),
+        None,
+    )
+    minimum_ready_template = None
+    if preferred_text_type:
+        first_hit = bundle["hits"][0]
+        minimum_ready_template = {
+            "schema": CONTENT_SCHEMA,
+            "slot_id": section.get("slot_id"),
+            "status": "ready",
+            "blocks": [{
+                "type": preferred_text_type,
+                "text": "REPLACE with one short claim directly supported by the cited hit",
+                "citations": [{
+                    "paper_id": first_hit["paper_id"],
+                    "chunk_id": first_hit["chunk_id"],
+                }],
+            }],
+            "missing_evidence": [],
+        }
+    # ponytail: one hit per paper first prevents a broad section from becoming a single-study summary;
+    # six x 1200 chars is the current cost ceiling, and retrieval logs show when this needs expansion.
+    prompt_hits = []
+    seen_papers = set()
+    for hit in bundle["hits"]:
+        if hit["paper_id"] in seen_papers:
+            continue
+        prompt_hits.append(hit)
+        seen_papers.add(hit["paper_id"])
+        if len(prompt_hits) == 6:
+            break
+    selected_pairs = {(hit["paper_id"], hit["chunk_id"]) for hit in prompt_hits}
+    for hit in bundle["hits"]:
+        if len(prompt_hits) == 6:
+            break
+        pair = (hit["paper_id"], hit["chunk_id"])
+        if pair not in selected_pairs:
+            prompt_hits.append(hit)
+            selected_pairs.add(pair)
+    prompt_bundle = {
+        **bundle,
+        "hits": [
+            {**hit, "text": hit["text"][:1200]}
+            for hit in prompt_hits
+        ],
+    }
+    broad_coverage_required = (
+        len(section.get("evidence_needs") or []) >= 3
+        and len({hit["paper_id"] for hit in prompt_hits}) >= 3
+    )
     prompt_payload = {
         "section": section,
-        "evidence_bundle": bundle,
+        "evidence_bundle": prompt_bundle,
+        "minimum_ready_template": minimum_ready_template,
         "required_schema": {
             "schema": CONTENT_SCHEMA,
             "slot_id": section.get("slot_id"),
@@ -278,6 +362,10 @@ async def execute_topic_content_compose(payload: dict) -> dict:
                 "type": "one exact planned type",
                 "text": "one short evidence-backed statement",
                 "citations": [{"paper_id": "exact supplied id", "chunk_id": "exact supplied id"}],
+            },
+            "recommendation_metadata": {
+                "recommendation_strength": "optional exact grading phrase only when stated in cited evidence",
+                "evidence_certainty": "optional exact certainty phrase only when stated in cited evidence",
             },
             "bullets": {
                 "type": "bullets",
@@ -295,6 +383,13 @@ async def execute_topic_content_compose(payload: dict) -> dict:
                 }],
             },
         },
+        "safe_fallback": {
+            "schema": CONTENT_SCHEMA,
+            "slot_id": section.get("slot_id"),
+            "status": "insufficient_evidence",
+            "blocks": [],
+            "missing_evidence": list(section.get("evidence_needs") or []),
+        },
     }
     messages = [{
         "role": "user",
@@ -304,39 +399,141 @@ async def execute_topic_content_compose(payload: dict) -> dict:
             "Do not add model knowledge, URLs, HTML, scripts, markdown, or uncited clinical claims. "
             "Citations must exactly match a supplied paper_id and chunk_id pair. Copy the exact block contracts; "
             "do not rename text, citations, items, columns, rows, or cells. Keep each text block at most 2000 "
-            "characters and each bullet item at most 600 characters. Return one JSON object only.\n\n"
+            "characters and each bullet item at most 600 characters. When any supplied hit directly supports a "
+            "planned claim, copy minimum_ready_template, replace only its placeholder text with one supported claim, "
+            "and list only unmet needs in missing_evidence. Copy safe_fallback exactly only when no supplied hit "
+            "supports any planned claim or minimum_ready_template is null; "
+            "never return partial JSON. Return one JSON object only.\n\n"
             f"INPUT JSON:\n{json.dumps(prompt_payload, ensure_ascii=False)}"
         ),
     }]
     try:
         content = None
         validation_error = None
-        for attempt in range(2):
+        previous_output = None
+        clean_retry = False
+        evidence_retry = False
+        coverage_retry = False
+        for attempt in range(3):
             attempt_messages = messages
             if validation_error is not None:
-                attempt_messages = [*messages, {
-                    "role": "user",
-                    "content": (
-                        "Your previous JSON failed schema validation. Return only the complete corrected content "
-                        f"object with schema, slot_id, status, blocks, and missing_evidence. Validation error: {validation_error}"
-                    ),
-                }]
+                if clean_retry:
+                    attempt_messages = [*messages, {
+                        "role": "user",
+                        "content": (
+                            "The previous response was truncated; ignore it and return the smallest valid object with "
+                            "schema, slot_id, status, blocks, and missing_evidence. Use one planned block with 1-3 short "
+                            "cited claims, or copy safe_fallback from INPUT JSON exactly. Return complete JSON only. "
+                            f"Validation error: {validation_error}"
+                        ),
+                    }]
+                elif coverage_retry:
+                    attempt_messages = [
+                        *messages,
+                        {"role": "assistant", "content": previous_output or ""},
+                        {
+                            "role": "user",
+                            "content": (
+                                "This broad section is under-covered. Return 2-3 short planned blocks that cover "
+                                "distinct supplied papers and distinct evidence needs. Every claim still requires "
+                                "an exact supplied paper_id/chunk_id citation; omit unsupported needs. Return one "
+                                "complete JSON object only."
+                            ),
+                        },
+                    ]
+                elif evidence_retry:
+                    attempt_messages = [
+                        *messages,
+                        {"role": "assistant", "content": previous_output or ""},
+                        {
+                            "role": "user",
+                            "content": (
+                                "Candidate evidence is present. Copy minimum_ready_template from INPUT JSON and replace "
+                                "only its placeholder text with one short claim directly supported by that exact cited "
+                                "hit. Put any truly unsupported planned needs in missing_evidence. Keep "
+                                "insufficient_evidence only if that cited hit supports no planned claim. Return one "
+                                "complete JSON object."
+                            ),
+                        },
+                    ]
+                else:
+                    attempt_messages = [
+                        *messages,
+                        {"role": "assistant", "content": previous_output or ""},
+                        {
+                            "role": "user",
+                            "content": (
+                                "Correct the preceding JSON. Return only one complete object with schema, slot_id, status, "
+                                "blocks, and missing_evidence. If it cannot be corrected without inventing content, copy "
+                                f"safe_fallback from INPUT JSON exactly. Validation error: {validation_error}"
+                            ),
+                        },
+                    ]
+            chat_options = {"temperature": 0.0, "max_tokens": 4096}
+            if conn["provider"] == "google":
+                # Gemini JSON mode prevents otherwise valid clinical component objects from being cut as prose.
+                chat_options["response_mime_type"] = "application/json"
             result = await adapter.chat(
-                conn["api_key"], conn["model_id"], attempt_messages,
-                temperature=0.0, max_tokens=4096,
+                conn["api_key"], conn["model_id"], attempt_messages, **chat_options,
             )
+            previous_output = result.get("content", "")
             try:
                 content = validate_topic_content(
                     section,
                     bundle,
-                    _load_json_object(result.get("content", "")),
+                    _load_content_candidate(previous_output),
                     model=model,
                 )
+                cited_papers = set()
+                for block in content.get("blocks", []):
+                    citations = list(block.get("citations", []))
+                    if block.get("type") == "bullets":
+                        citations.extend(
+                            citation
+                            for item in block.get("items", [])
+                            for citation in item.get("citations", [])
+                        )
+                    elif block.get("type") == "table":
+                        citations.extend(
+                            citation
+                            for row in block.get("rows", [])
+                            for citation in row.get("citations", [])
+                        )
+                    cited_papers.update(citation["paper_id"] for citation in citations)
+                if (
+                    content["status"] == "ready"
+                    and broad_coverage_required
+                    and len(cited_papers) < 2
+                    and not coverage_retry
+                    and attempt < 2
+                ):
+                    validation_error = "broad section cites fewer than two distinct supplied papers"
+                    clean_retry = False
+                    evidence_retry = False
+                    coverage_retry = True
+                    content = None
+                    continue
+                if content["status"] == "insufficient_evidence" and not evidence_retry and attempt < 2:
+                    validation_error = "candidate evidence requires one bounded semantic re-check"
+                    clean_retry = False
+                    evidence_retry = True
+                    coverage_retry = False
+                    content = None
+                    continue
                 break
             except (ValueError, json.JSONDecodeError) as error:
                 validation_error = str(error)[:500]
+                clean_retry = _needs_clean_retry(result, validation_error)
+                evidence_retry = False
+                coverage_retry = False
         if content is None:
-            raise ValueError(validation_error or "composer returned no valid content")
+            # ponytail: invalid model structure never becomes clinical text; preserve the planned gap as an empty safe result.
+            return {
+                "status": "insufficient_evidence",
+                "content": insufficient_evidence_content(section, model=model),
+                "error": None,
+                "fallback_reason": f"invalid_model_output: {validation_error or 'unknown validation failure'}",
+            }
         return {"status": content["status"], "content": content, "error": None}
     except (ValueError, json.JSONDecodeError) as error:
         return {"status": "failed", "content": None, "error": f"Invalid topic content: {error}"}

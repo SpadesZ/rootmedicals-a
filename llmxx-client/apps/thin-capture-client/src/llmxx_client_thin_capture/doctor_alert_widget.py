@@ -18,7 +18,7 @@
 #   摘要的優先序必須讓 ICD/A/P 錯配高於文獻缺失，避免橘燈原因被黃燈文字稀釋。
 # 維護提醒:
 #   - 這個畫面預設是給醫師看的，不是工程 dashboard；Session、reason_code、score 等追蹤資訊
-#     必須放在展開區尾端，且用「系統追蹤」命名，不要蓋過臨床覆核理由。
+#     只留在 diagnostics/server log，不得放進醫師展開區。
 #   - 展開區前半段要回答醫師最自然的三個問題：診斷是否對、處置是否有依據、病人需要注意什麼。
 #   - 新增 reason_code 時要同步 REASON_LABELS、TEXT 與 _clinical_comment() 的摘要優先序。
 #   - 主題由 doctor_alert.theme 或 ROOTMEDICALS_ALERT_THEME 控制，控制台只傳設定，不改臨床判斷。
@@ -81,13 +81,13 @@ TEXT = {
         "warnings": "提醒",
         "alternatives": "可考慮方向",
         "reason": "原因",
-        "clinical_summary": "臨床判讀摘要",
-        "clinical_clues": "臨床重點",
+        "clinical_summary": "判讀結論",
+        "clinical_clues": "臨床分析",
         "diagnosis_review": "診斷與 ICD-10",
-        "plan_fit": "處置合理性",
+        "plan_fit": "建議方案",
         "patient_counseling": "用藥與衛教提醒",
         "plan_review": "處置與 EBM 支持",
-        "source_trace": "來源追溯",
+        "source_trace": "文獻依據",
         "review_required": "需要醫師覆核",
         "safety_review": "安全提醒",
         "system_tracking": "系統追蹤",
@@ -146,13 +146,13 @@ TEXT = {
         "warnings": "Warnings",
         "alternatives": "Possible alternatives",
         "reason": "Reason",
-        "clinical_summary": "Clinical Summary",
-        "clinical_clues": "Clinical Clues",
+        "clinical_summary": "Conclusion",
+        "clinical_clues": "Clinical Analysis",
         "diagnosis_review": "Diagnosis and ICD-10",
-        "plan_fit": "Plan Fit",
+        "plan_fit": "Recommended Actions",
         "patient_counseling": "Medication and Counseling Notes",
         "plan_review": "Plan and EBM Support",
-        "source_trace": "Source Trace",
+        "source_trace": "Literature",
         "review_required": "Physician Review Needed",
         "safety_review": "Safety Notes",
         "system_tracking": "System Tracking",
@@ -434,6 +434,21 @@ def _icd_anchor_text(clinical: Dict[str, Any], final_gate: Dict[str, Any]) -> st
     return code or label or "-"
 
 
+def _has_active_bleeding_anticoagulation(clinical: Dict[str, Any]) -> bool:
+    clinical_text = " ".join(
+        _safe_str(value, "")
+        for value in (
+            clinical.get("dx_text"),
+            clinical.get("dx"),
+            clinical.get("hx"),
+            clinical.get("tx"),
+        )
+    ).lower()
+    has_active_bleeding = any(term in clinical_text for term in ("active bleeding", "active gastrointestinal bleeding", "major bleeding"))
+    has_anticoagulation = any(term in clinical_text for term in ("anticoagulation", "anticoagulant", "apixaban"))
+    return has_active_bleeding and has_anticoagulation
+
+
 def _clinical_comment(
     *,
     lang: str,
@@ -453,6 +468,10 @@ def _clinical_comment(
 
     # 程式筆記：摘要只放「醫師最需要先處理的主因」。ICD/A/P 這類硬錯配
     # 會造成橘燈，臨床風險高於文獻缺失，所以永遠排在 sources_missing 前面。
+    if str(response.get("error_code") or "").strip() == "demo_fixture_disabled":
+        if lang == "zh":
+            return "目前連線的伺服器未啟用 Demo Fixture，已停止判讀；請由控制台啟動 Demo Fixture 後重試。"
+        return "The connected server is not in Demo Fixture mode. Start Demo Fixture from the control panel and retry."
     if "icd_dx_mismatch" in reasons:
         if lang == "zh":
             return f"ICD 是 {icd_anchor}，但 A 欄是 {dx_text}，屬於 ICD-vs-A mismatch，請先覆核。"
@@ -461,6 +480,10 @@ def _clinical_comment(
         if lang == "zh":
             return f"ICD/A 是 {icd_anchor}，但處置欄是 {tx_text}，屬於 ICD-vs-P treatment mismatch，請先覆核。"
         return f"ICD/A is {icd_anchor}, but the plan is {tx_text}; this is an ICD-vs-P treatment mismatch. Review first."
+    if "rag_orange_hard_gate" in reasons and _has_active_bleeding_anticoagulation(clinical):
+        if lang == "zh":
+            return "病歷記載活動性出血，但處置計畫要立即啟動抗凝血，存在重大安全衝突，請先處理出血並覆核。"
+        return "Active bleeding conflicts with immediate anticoagulation initiation; address the bleeding and review the plan first."
     if "contraindication_not_respected" in reasons or "rag_orange_hard_gate" in reasons:
         return text["orange_comment"]
     if "timeout" in raw_comment_lower or "rag_timeout" in reasons:
@@ -496,10 +519,10 @@ def _clinical_comment(
     return text["yellow_comment"]
 
 
-def _extract_evidence_lines(ebm: Dict[str, Any]) -> List[str]:
-    # evidence 顯示優先用 rag_comments.sources；若來源缺欄位，再從 retrieval.chunks 補足。
-    # 這樣醫師看到的是 paper/chunk/PMID/DOI，不是單純 LLM 摘要。
+def _extract_evidence_lines(ebm: Dict[str, Any], lang: str = "zh") -> List[str]:
+    # 醫師畫面只呈現正式文獻名稱與書目資料；paper/chunk id 保留在 diagnostics，不放進 UI。
     lines: List[str] = []
+    seen: set[tuple[str, str, str, str]] = set()
     comments = _as_list(ebm.get("rag_comments"))
     retrieval = _as_dict(ebm.get("retrieval"))
     chunks = {
@@ -508,36 +531,71 @@ def _extract_evidence_lines(ebm: Dict[str, Any]) -> List[str]:
         if isinstance(chunk, dict) and chunk.get("chunk_id")
     }
 
-    for index, comment in enumerate(comments, start=1):
+    def append_source(source: Dict[str, Any], chunk: Dict[str, Any]) -> None:
+        payload = _as_dict(chunk.get("payload"))
+        title = _first_text(
+            source.get("title"),
+            source.get("guideline_title"),
+            chunk.get("title"),
+            chunk.get("guideline_title"),
+            payload.get("title"),
+            payload.get("guideline_title"),
+            source.get("citation_text"),
+            chunk.get("citation_text"),
+            payload.get("citation_text"),
+            default="",
+        )
+        paper_id = _first_text(source.get("paper_id"), chunk.get("paper_id"), payload.get("paper_id"), default="")
+        pmid = _first_text(source.get("pmid"), chunk.get("pmid"), payload.get("pmid"), default="")
+        doi = _first_text(source.get("doi"), chunk.get("doi"), payload.get("doi"), default="")
+        key = (paper_id.lower(), title.lower(), pmid.lower(), doi.lower())
+        if key in seen:
+            return
+        seen.add(key)
+
+        journal = _first_text(source.get("journal"), chunk.get("journal"), payload.get("journal"), default="")
+        year = _first_text(source.get("publication_year"), chunk.get("publication_year"), payload.get("publication_year"), default="")
+        volume = _first_text(source.get("volume"), chunk.get("volume"), payload.get("volume"), default="")
+        issue = _first_text(source.get("issue"), chunk.get("issue"), payload.get("issue"), default="")
+        pages = _first_text(source.get("pages"), chunk.get("pages"), payload.get("pages"), default="")
+        citation = journal
+        if year:
+            citation = f"{citation}. {year}" if citation else year
+        if volume:
+            citation = f"{citation};{volume}" if citation else volume
+        if issue:
+            citation += f"({issue})"
+        if pages:
+            citation += f":{pages}"
+
+        block = [title or ("文獻名稱未建檔" if lang == "zh" else "Literature title unavailable")]
+        if citation:
+            block.append(citation)
+        identifiers = []
+        if pmid:
+            identifiers.append(f"PMID: {pmid}")
+        if doi:
+            identifiers.append(f"DOI: {doi}")
+        if identifiers:
+            block.append("｜".join(identifiers))
+        lines.append("\n".join(block))
+
+    for comment in comments:
         if not isinstance(comment, dict):
             continue
-        comment_text = _safe_str(comment.get("comment") or comment.get("text") or comment.get("summary"), "")
         sources = _as_list(comment.get("sources"))
-        if not sources and comment_text:
-            lines.append(f"{index}. {comment_text}")
-            continue
         for source in sources:
             if not isinstance(source, dict):
                 continue
             chunk_id = _safe_str(source.get("chunk_id"), "")
             chunk = chunks.get(chunk_id, {})
-            paper_id = _first_text(source.get("paper_id"), chunk.get("paper_id"), default="-")
-            pmid = _first_text(source.get("pmid"), chunk.get("pmid"), default="-")
-            doi = _first_text(source.get("doi"), chunk.get("doi"), default="-")
-            label = f"{index}. paper_id={paper_id}; chunk_id={chunk_id or '-'}; PMID={pmid}; DOI={doi}"
-            if comment_text:
-                label = f"{label}\n   {comment_text}"
-            lines.append(label)
+            append_source(source, chunk)
 
     if lines:
         return lines
 
     for chunk in chunks.values():
-        paper_id = _safe_str(chunk.get("paper_id"))
-        chunk_id = _safe_str(chunk.get("chunk_id"))
-        pmid = _safe_str(chunk.get("pmid"))
-        doi = _safe_str(chunk.get("doi"))
-        lines.append(f"- paper_id={paper_id}; chunk_id={chunk_id}; PMID={pmid}; DOI={doi}")
+        append_source({}, chunk)
     return lines
 
 
@@ -598,6 +656,22 @@ def _clinical_guidance_lines(clinical: Dict[str, Any], final_gate: Dict[str, Any
             ],
             "counsel": [
                 "- 補上 ICD-10 後再重新送出，可避免診斷分類與文獻查詢錯位。" if zh else "- Add ICD-10 and rerun to avoid mismatch between diagnosis category and evidence lookup.",
+            ],
+        }
+
+    if light == "orange" and "rag_orange_hard_gate" in reasons and _has_active_bleeding_anticoagulation(clinical):
+        return {
+            "clues": [
+                "- I48.91 與心房顫動診斷一致。" if zh else "- I48.91 aligns with the atrial fibrillation diagnosis.",
+                "- 病歷記載活動性腸胃道出血與血紅素下降。" if zh else "- The chart documents active gastrointestinal bleeding and a hemoglobin decrease.",
+                "- 目前處置計畫為立即啟動 apixaban，與活動性出血構成重大安全衝突。" if zh else "- Immediate apixaban initiation conflicts with the active bleeding state.",
+            ],
+            "fit": [
+                "- 橘燈代表此刻不可直接執行原處置，並不等於病人日後永久不能接受抗凝血。" if zh else "- Orange means the current plan should not proceed now; it does not mean anticoagulation is permanently excluded.",
+            ],
+            "counsel": [
+                "- 暫緩立即啟動抗凝血，先評估出血嚴重度、來源並完成必要止血處置。" if zh else "- Defer immediate anticoagulation while bleeding severity and source are evaluated and treated.",
+                "- 出血控制後，再依中風風險、出血風險及個案狀況評估抗凝血恢復時機。" if zh else "- After bleeding control, reassess stroke risk, bleeding risk, and timing of anticoagulation.",
             ],
         }
 
@@ -806,16 +880,12 @@ class DoctorAlertWidget:
         clinical = _as_dict(response.get("clinical_parse"))
         ebm = _as_dict(response.get("ebm"))
         final_gate = _as_dict(response.get("final_gate"))
-        adjudication = _as_dict(response.get("adjudication"))
-        claim_verify = _as_dict(response.get("claim_verify"))
-        demo_verifier = _as_dict(response.get("demo_verifier"))
 
         light = _first_text(final_gate.get("light_color"), ebm.get("light_color"), default="yellow").lower()
         if light not in {"green", "yellow", "orange", "gray", "red"}:
             light = "yellow"
         text = TEXT[self.language]
         code, label, color, suffix = LIGHT_LABELS[self.language][light]
-        display_mode = _safe_str(final_gate.get("display_mode"), "review")
         if event_type == "poll":
             suffix = f"{suffix} / update" if self.language == "en" else f"{suffix} / 更新"
         self._set_status(code, label, color, suffix)
@@ -823,7 +893,6 @@ class DoctorAlertWidget:
         dx = _safe_str(clinical.get("dx"))
         icd = _safe_str(clinical.get("icd_code"))
         tx = _safe_str(clinical.get("tx"))
-        hx = _safe_str(clinical.get("hx"))
         short_comment = _clinical_comment(
             lang=self.language,
             light=light,
@@ -836,84 +905,23 @@ class DoctorAlertWidget:
         self.tx_label.setText(f"{text['tx']}: {tx}")
         self.comment_label.setText(short_comment)
 
-        evidence_lines = _extract_evidence_lines(ebm)
-        evidence_summary_lines = _extract_evidence_summary_lines(ebm, self.language)
+        evidence_lines = _extract_evidence_lines(ebm, self.language)
         clinical_guidance = _clinical_guidance_lines(clinical, final_gate, light, self.language)
-        reason_codes = _as_list(final_gate.get("reason_codes"))
-        hard_fail_reasons = _as_list(final_gate.get("hard_fail_reasons"))
-        icd_gate = _as_dict(final_gate.get("icd_gate") or ebm.get("icd_gate"))
-        warnings = _as_list(ebm.get("warnings"))
-        alternatives = _as_list(ebm.get("alternatives") or response.get("alternatives"))
-        score_labels = SCORE_LABELS[self.language]
-        score_lines = [
-            f"{score_labels['semantic_alignment_score']}: {_safe_str(adjudication.get('semantic_alignment_score'))}",
-            f"{score_labels['evidence_support_score']}: {_safe_str(adjudication.get('evidence_support_score'))}",
-            f"{score_labels['conflict_score']}: {_safe_str(adjudication.get('conflict_score'))}",
-            f"{score_labels['risk_score']}: {_safe_str(adjudication.get('risk_score'))}",
-            f"{score_labels['claim_support']}: {_safe_str(claim_verify.get('overall_claim_support'))}",
-            f"{score_labels['demo_verifier']}: {_safe_str(demo_verifier.get('verdict'))} / {_safe_str(demo_verifier.get('score'))}",
-        ]
-        evidence_backed = bool(final_gate.get("evidence_backed"))
-        evidence_summary = text["evidence_yes"] if evidence_backed else text["evidence_no"]
-        required_review = _format_clinical_reason_list(hard_fail_reasons or reason_codes, self.language)
-        action_text = _clinical_action_text(light, self.language)
-        # 程式筆記:
-        # 展開區前半段是醫師判讀路徑，後半段才是系統追蹤。這個順序很重要：
-        # 現場 demo 時醫師會先問「我為什麼要改病歷或處置」，不是先問 session_id。
+        analysis_lines = [*clinical_guidance["clues"], *clinical_guidance["fit"]]
+        recommendation_lines = clinical_guidance["counsel"]
+        # 醫師展開區只回答「結論、分析、下一步、依據」；工程追蹤仍保留在 diagnostics/server log。
         detail = [
             f"【{text['clinical_summary']}】",
-            f"{text['light']}: {label}",
-            f"{text['reason']}: {short_comment}",
-            f"建議: {action_text}" if self.language == "zh" else f"Action: {action_text}",
-            f"{text['evidence_backed']}: {_bool_text(evidence_backed, self.language)}",
+            f"{label}：{short_comment}" if self.language == "zh" else f"{label}: {short_comment}",
             "",
             f"【{text['clinical_clues']}】",
-            "\n".join(clinical_guidance["clues"]),
-            "",
-            f"【{text['diagnosis_review']}】",
-            f"{text['dx']}: {dx}",
-            f"{text['icd']}: {icd}",
-            f"{text['reason']}: {_safe_str(icd_gate.get('reason'))}",
-            f"{text['hx']}: {hx}",
+            "\n".join(analysis_lines),
             "",
             f"【{text['plan_fit']}】",
-            "\n".join(clinical_guidance["fit"]),
-            "",
-            f"【{text['patient_counseling']}】",
-            "\n".join(clinical_guidance["counsel"]),
-            "",
-            f"【{text['plan_review']}】",
-            f"{text['tx']}: {tx}",
-            evidence_summary,
-            "\n".join(evidence_summary_lines),
+            "\n".join(recommendation_lines),
             "",
             f"【{text['source_trace']}】",
-            "\n".join(evidence_lines) if evidence_lines else text["no_evidence"],
-            "",
-            f"【{text['review_required']}】",
-            required_review,
-            "",
-            f"【{text['safety_review']}】",
-            _format_doctor_warning_list(warnings, self.language),
-            "",
-            f"【{text['alternatives']}】",
-            _format_list(alternatives),
-            "",
-            f"【{text['system_tracking']}】",
-            f"Session: {_safe_str(response.get('session_id'))}",
-            f"{text['status']}: {_safe_str(response.get('status'))}",
-            f"{text['display']}: {display_mode}",
-            "",
-            f"{text['scores']}:",
-            "\n".join(score_lines),
-            "",
-            f"{text['reason_codes']}:",
-            _format_reason_list(reason_codes, self.language),
-            "",
-            f"{text['hard_fails']}:",
-            _format_reason_list(hard_fail_reasons, self.language),
-            "",
-            f"{text['reason']}: {_safe_str(final_gate.get('reason'))}",
+            "\n\n".join(evidence_lines) if evidence_lines else text["no_evidence"],
         ]
         self.detail_box.setPlainText("\n".join(detail))
         self._show_widget()
@@ -973,6 +981,8 @@ class DoctorAlertWidget:
         self.detail_box.setVisible(self.expanded)
         self.hint_label.setText(TEXT[self.language]["click_collapse"] if self.expanded else TEXT[self.language]["click_expand"])
         self._resize()
+        if not self._user_positioned:
+            self._place_near_target_window()
         self.widget.repaint()
 
     def _event_global_pos(self, event: Any) -> Any:
@@ -983,8 +993,8 @@ class DoctorAlertWidget:
     def _resize(self) -> None:
         # 不再用 setFixedSize，改成 min size + resize，這樣 QSizeGrip 才能讓使用者自由縮放。
         z = self.zoom
-        width = round((360 if not self.expanded else 460) * z)
-        height = round((245 if not self.expanded else 560) * z)
+        width = round((360 if not self.expanded else 900) * z)
+        height = round((245 if not self.expanded else 760) * z)
         self.widget.setMinimumSize(round(280 * z), round(170 * z))
         self.widget.resize(width, height)
 

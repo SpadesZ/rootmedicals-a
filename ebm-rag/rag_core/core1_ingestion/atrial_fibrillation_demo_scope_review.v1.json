@@ -1,0 +1,80 @@
+{
+  "schema_version": "1.0",
+  "review_batch_id": "af-demo-core-2026-07-16",
+  "mapping_version": "demo-core-2026-07-16.1",
+  "topic_key": "atrial-fibrillation",
+  "purpose": "buyer_demo",
+  "reviewed_by": "user-provided-external-reviewer",
+  "reviewed_at": "2026-07-16",
+  "clinical_reconfirmation_required": true,
+  "forbid_wildcard_scope": true,
+  "forbidden_source_ids": ["AR", "RM_76EA6AB0"],
+  "artifact_purpose": "Freeze the eight demo-level source-to-slot decisions approved in the user-provided review.",
+  "input_contract": "Current owned SQL slot IDs/headings and the explicit reviewer source families; no keyword or LLM inference.",
+  "output_contract": "Exactly eight approved_demo slots with allowlisted source IDs and a deterministic review hash.",
+  "safety_boundary": "This is a demo-level mapping review and still requires later clinician reconfirmation; wildcard and cross-disease sources are forbidden.",
+  "maintenance_note": "Any slot, heading, or source change requires a new artifact version and review batch; do not overwrite this artifact.",
+  "slots": [
+    {
+      "slot_key": "universal:u1",
+      "heading": "Overview and Recommendations",
+      "source_ids": ["RM_AF_GUIDE_2023"],
+      "decision": "approved_demo",
+      "reason": "The reviewed guideline source is appropriate for a concise AF overview and recommendations demo."
+    },
+    {
+      "slot_key": "universal:u2-1",
+      "heading": "Description",
+      "source_ids": ["RM_AF_DEFINITIONS_PATHOPHYS_2023"],
+      "decision": "approved_demo",
+      "reason": "The definitions and pathophysiology slice directly supports the disease description."
+    },
+    {
+      "slot_key": "universal:u3",
+      "heading": "Diagnosis",
+      "source_ids": ["RM_AF_EVALUATION_2023"],
+      "decision": "approved_demo",
+      "reason": "The evaluation slice directly supports AF diagnosis."
+    },
+    {
+      "slot_key": "universal:u3-1",
+      "heading": "Making the Diagnosis",
+      "source_ids": ["RM_AF_EVALUATION_2023"],
+      "decision": "approved_demo",
+      "reason": "The evaluation slice directly supports the diagnostic process."
+    },
+    {
+      "slot_key": "universal:u4",
+      "heading": "Management",
+      "source_ids": [
+        "RM_AF_ANTICOAG_2023",
+        "RM_AF_CONTRA_2023",
+        "RM_AF_RATE_CONTROL_2023",
+        "RM_AF_RHYTHM_CONTROL_2023"
+      ],
+      "decision": "approved_demo",
+      "reason": "Anticoagulation, contraindication, rate-control, and rhythm-control sources form the reviewed core management set."
+    },
+    {
+      "slot_key": "universal:u5-2-1",
+      "heading": "United States Guidelines",
+      "source_ids": ["RM_AF_GUIDE_2023"],
+      "decision": "approved_demo",
+      "reason": "The 2023 ACC/AHA/ACCP/HRS guideline is the reviewed United States guideline source."
+    },
+    {
+      "slot_key": "universal:af-mgmt-thromboembolic",
+      "heading": "Thromboembolic Prophylaxis",
+      "source_ids": ["RM_AF_ANTICOAG_2023", "RM_AF_CONTRA_2023"],
+      "decision": "approved_demo",
+      "reason": "The anticoagulation and contraindication slices are a direct, high-density match for thromboembolic prophylaxis."
+    },
+    {
+      "slot_key": "universal:af-prognosis-stroke",
+      "heading": "Embolic Stroke and Thromboembolism",
+      "source_ids": ["RM_AF_ANTICOAG_2023", "RM_AF_CONTRA_2023"],
+      "decision": "approved_demo",
+      "reason": "The anticoagulation and contraindication slices directly support embolic-stroke and thromboembolism prognosis."
+    }
+  ]
+}

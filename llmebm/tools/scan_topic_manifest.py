@@ -1,5 +1,10 @@
-# File path: rootmedicals-a/llmebm/tools/scan_topic_manifest.py
-# Description: Bounded DOM+screenshot scanner for self-hosted llmebm Topic Pages.
+# 模組定位: self-hosted llmebm Topic Page 的 bounded DOM+screenshot scanner。
+# 主要責任: 擷取靜態 slot manifest/截圖；結構變更才生成，視覺變更只刷新 evidence。
+# 呼叫來源: 開發/驗收命令與未來受控的 llmebm refresh workflow。
+# 輸入契約: allowlisted http(s) origin、Topic Page URL 與 scan-root 目錄。
+# 輸出契約: llmebm-topic-manifest.v1、相對 screenshot artifact、sha256 與 scan status。
+# 安全邊界: 不掃任意外站、不讀 cookies/localStorage/history；artifact 不得逃出 scan root。
+# 維護提醒: DOM selector/互動狀態改動時，先更新 fixture test，再更新 bounded scanner。
 # ----------------------------------------------------------------------------------------------------
 
 import argparse
@@ -60,6 +65,13 @@ def canonicalize_dom_slots(raw_slots):
         heading = str(raw.get("heading", "")).strip()
         if not slot_id or not heading or slot_id in seen:
             continue
+        allowed_blocks = raw.get("allowed_blocks", ALLOWED_BLOCKS)
+        if (
+            not isinstance(allowed_blocks, (list, tuple))
+            or not allowed_blocks
+            or any(block not in ALLOWED_BLOCKS for block in allowed_blocks)
+        ):
+            raise ValueError(f"Invalid allowed_blocks in DOM slot: {slot_id}")
         seen.add(slot_id)
         slots.append({
             "slot_id": slot_id,
@@ -68,7 +80,7 @@ def canonicalize_dom_slots(raw_slots):
             "level": int(raw.get("level", 1)),
             "order": order,
             "content_target": True,
-            "allowed_blocks": list(ALLOWED_BLOCKS),
+            "allowed_blocks": list(dict.fromkeys(allowed_blocks)),
         })
     if not slots:
         raise ValueError("No Topic content slots were found in the DOM.")
@@ -77,6 +89,29 @@ def canonicalize_dom_slots(raw_slots):
 
 def should_trigger_generation(scan_status, enabled=True):
     return bool(enabled and scan_status == "saved")
+
+
+def classify_scan_status(current_manifest, rescanned_manifest, current_artifacts_valid):
+    """Separate semantic slot changes from screenshot-only evidence refreshes."""
+    if not current_manifest or current_manifest.get("dom_hash") != rescanned_manifest.get("dom_hash"):
+        return "saved"
+    if not current_artifacts_valid:
+        return "visual_updated"
+
+    def visual_contract(manifest):
+        return {
+            "viewport": manifest.get("viewport"),
+            "screenshots": [
+                {
+                    "sha256": shot.get("sha256"),
+                    "mime_type": shot.get("mime_type"),
+                    "state": shot.get("state"),
+                }
+                for shot in manifest.get("screenshots", [])
+            ],
+        }
+
+    return "unchanged" if visual_contract(current_manifest) == visual_contract(rescanned_manifest) else "visual_updated"
 
 
 def request_generation(page_url, topic_name):
@@ -138,7 +173,8 @@ def scan(url, output_root, allow_origins, generate=True):
                             slot_id: button.dataset.slotId,
                             heading,
                             heading_path: headingPath,
-                            level: Number(button.dataset.slotLevel || 1)
+                            level: Number(button.dataset.slotLevel || 1),
+                            allowed_blocks: JSON.parse(button.dataset.allowedBlocks || '[]')
                         });
                         const nested = child.querySelector(':scope > .sb-children');
                         if (nested) walk(nested, headingPath);
@@ -196,10 +232,9 @@ def scan(url, output_root, allow_origins, generate=True):
             current_artifacts_valid = True
         except ValueError:
             pass
-    unchanged = bool(current_manifest and current_artifacts_valid)
     generation = None
-    scan_status = "unchanged" if unchanged else "saved"
-    if not unchanged:
+    scan_status = classify_scan_status(current_manifest, manifest, current_artifacts_valid)
+    if scan_status != "unchanged":
         topic_content_db.save_manifest(manifest)
         manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     else:

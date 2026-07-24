@@ -31,6 +31,7 @@ from ..contracts.schemas import ClinicalParse, FormalClientPayload
 
 
 ALLERGIC_RHINITIS_FIXTURE_ID = "allergic_rhinitis_intranasal_steroid"
+AF_ACTIVE_BLEEDING_FIXTURE_ID = "atrial_fibrillation_active_bleeding"
 # 對外 UI 與 payload mode 統一使用 demo fixture / deterministic demo 命名。
 
 DEMO_MODE_ALIASES = {"demo_fixture", "deterministic_demo"}
@@ -49,57 +50,112 @@ def build_demo_ebm_fixture(payload: FormalClientPayload, clinical: ClinicalParse
         return None
     if str(payload.demo_mode or "").strip().lower() not in DEMO_MODE_ALIASES:
         return None
-    if str(payload.demo_fixture_id or "").strip().lower() != ALLERGIC_RHINITIS_FIXTURE_ID:
-        return None
-
-    # 這裡只匹配一個很窄的過敏性鼻炎展示案例。
-    # 若 A/P 與 allergic rhinitis 或鼻噴劑治療無關，fixture 直接放棄，交回 live RAG/安全 gate 處理。
+    fixture_id = str(payload.demo_fixture_id or "").strip().lower()
     clinical_text = " ".join([clinical.dx, clinical.tx, clinical.hx]).lower()
-    if not _normalized_contains(clinical_text, "allergic rhinitis"):
-        return None
-    if "spray" not in clinical_text and "intranasal" not in clinical_text and "nasal" not in clinical_text:
+    if fixture_id == ALLERGIC_RHINITIS_FIXTURE_ID:
+        if not _normalized_contains(clinical_text, "allergic rhinitis"):
+            return None
+        if "spray" not in clinical_text and "intranasal" not in clinical_text and "nasal" not in clinical_text:
+            return None
+        paper_id = "PMID_32707227"
+        chunk_id = "PMID_32707227_c001"
+        title = "Rhinitis 2020: A practice parameter update"
+        journal = "Journal of Allergy and Clinical Immunology"
+        publication_year = 2020
+        volume = "146"
+        issue = "4"
+        pages = "721-767"
+        doi = "10.1016/j.jaci.2020.07.007"
+        pmid = "32707227"
+        light_color = "green"
+        specialty = "allergy_ent"
+        disease = "allergic rhinitis"
+        claim = "鼻用類固醇治療與過敏性鼻炎症狀控制一致。"
+        comment = "過敏性鼻炎診療參數指出，鼻用類固醇仍是持續性過敏性鼻炎的首選單方治療。"
+        has_contraindication = False
+        warnings: list[Any] = ["demo_fixture_enabled", "demo_only_not_live_rag"]
+        alternatives = [
+            "確認鼻噴劑使用方式、規律性與療效。",
+            "症狀持續或出現單側鼻塞、鼻出血、發燒時重新評估。",
+        ]
+    elif fixture_id == AF_ACTIVE_BLEEDING_FIXTURE_ID:
+        if not _normalized_contains(clinical_text, "atrial fibrillation"):
+            return None
+        if not any(term in clinical_text for term in ("apixaban", "anticoagulation", "anticoagulant")):
+            return None
+        if not any(term in clinical_text for term in ("active bleeding", "active gastrointestinal bleeding", "major bleeding")):
+            return None
+        paper_id = "PMID_38033089"
+        chunk_id = "PMID_38033089_c001"
+        title = "2023 ACC/AHA/ACCP/HRS Guideline for the Diagnosis and Management of Atrial Fibrillation"
+        journal = "Circulation"
+        publication_year = 2024
+        volume = "149"
+        issue = "1"
+        pages = "e1-e156"
+        doi = "10.1161/CIR.0000000000001193"
+        pmid = "38033089"
+        light_color = "orange"
+        specialty = "cardiology"
+        disease = "atrial fibrillation"
+        claim = "活動性重大出血期間不應直接立即啟動抗凝血，需先處理出血並重新評估。"
+        comment = "心房顫動指引包含抗凝治療中活動性出血的處置；目前病例有活動性腸胃道出血，立即啟動 apixaban 存在重大安全衝突。"
+        has_contraindication = True
+        warnings = [
+            "demo_fixture_enabled",
+            "demo_only_not_live_rag",
+            {
+                "code": "contraindication_hard_gate",
+                "type": "contraindication",
+                "reason": "patient_context_contains_hard_contraindication",
+                "message": "Active gastrointestinal bleeding conflicts with immediate anticoagulation initiation.",
+            },
+        ]
+        alternatives = [
+            "暫緩立即啟動抗凝血並先評估出血嚴重度與來源。",
+            "出血控制後，再依中風與出血風險評估抗凝血恢復時機。",
+        ]
+    else:
         return None
 
-    paper_id = "RM_DEMO_AR_GUIDELINE_2026"
-    chunk_id = "RM_DEMO_AR_GUIDELINE_2026_c001"
-    doi = "10.0000/rootmedicals.demo.ar.2026"
-    pmid = "DEMO-PMID-AR-001"
-    comment = (
-        "Demo Fixture：在沒有紅旗禁忌時，鼻用類固醇治療與過敏性鼻炎鼻部症狀控制一致。"
-    )
     # chunk metadata 仍保持與 live RAG 相同欄位，讓 dashboard / doctor alert 可以用同一套 evidence renderer。
     chunk = {
         "chunk_id": chunk_id,
         "paper_id": paper_id,
-        "source_type": "demo_fixture",
+        "source_type": "guideline",
         "six_s_level": "guideline",
         "ocebm_level": "1a",
-        "specialty": "allergy_ent",
-        "disease": "allergic rhinitis",
+        "specialty": specialty,
+        "disease": disease,
         "guideline": True,
-        "contraindication": False,
+        "is_guideline": True,
+        "contraindication": has_contraindication,
+        "has_contraindication_terms": has_contraindication,
         "pmid": pmid,
         "doi": doi,
-        "title": "RootMedicals 過敏性鼻炎可重現 Demo Fixture",
+        "title": title,
+        "guideline_title": title,
+        "journal": journal,
+        "publication_year": publication_year,
+        "volume": volume,
+        "issue": issue,
+        "pages": pages,
         "text": comment,
     }
     return {
         "status": "ok",
         "demo_only": True,
-        "demo_fixture_id": ALLERGIC_RHINITIS_FIXTURE_ID,
-        "query_id": "demo-allergic-rhinitis-001",
-        "light_color": "green",
+        "demo_fixture_id": fixture_id,
+        "query_id": f"demo-{fixture_id}-001",
+        "light_color": light_color,
         "short_comment": comment,
         "summary": comment,
-        "llmaaj_score": 0.91,
+        "llmaaj_score": 0.94,
         # 這兩個 warning 是刻意留給 demo 報告看的稽核記號：來源是 fixture，不是 live provider。
-        "warnings": [
-            "demo_fixture_enabled",
-            "demo_only_not_live_rag",
-        ],
+        "warnings": warnings,
         "rag_comments": [
             {
-                "claim": "鼻噴劑治療與過敏性鼻炎症狀控制一致。",
+                "claim": claim,
                 "comment": comment,
                 "sources": [
                     {
@@ -107,6 +163,12 @@ def build_demo_ebm_fixture(payload: FormalClientPayload, clinical: ClinicalParse
                         "chunk_id": chunk_id,
                         "pmid": pmid,
                         "doi": doi,
+                        "title": title,
+                        "journal": journal,
+                        "publication_year": publication_year,
+                        "volume": volume,
+                        "issue": issue,
+                        "pages": pages,
                     }
                 ],
             }
@@ -117,26 +179,23 @@ def build_demo_ebm_fixture(payload: FormalClientPayload, clinical: ClinicalParse
                 {
                     "phase": "demo_fixture",
                     "status": "matched",
-                    "reason": "payload 明確啟用 Demo Fixture，且符合過敏性鼻炎 fixture marker。",
+                    "reason": f"payload 明確啟用 Demo Fixture，且符合 {fixture_id} marker。",
                     "top_k": 1,
                 }
             ],
             "chunks": [chunk],
         },
         "claim_verify": {
-            "overall_claim_support": 0.91,
+            "overall_claim_support": 0.94,
             "contradiction_count": 0,
             "verdict": "pass",
         },
         "demo_verifier": {
             "verdict": "pass",
-            "score": 92,
+            "score": 96,
             "hard_fail_reasons": [],
-            "fixture_id": ALLERGIC_RHINITIS_FIXTURE_ID,
+            "fixture_id": fixture_id,
         },
-        "alternatives": [
-            "正式上線前仍需使用 live RAG 來源完成 evidence-backed 驗證。",
-            "若症狀或理學檢查提示感染，應維持 review 模式並由醫師確認。",
-        ],
+        "alternatives": alternatives,
     }
 

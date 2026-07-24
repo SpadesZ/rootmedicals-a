@@ -1,0 +1,30 @@
+{
+  "schema": "rootmedicals-source-policy-registry.v1",
+  "sources": [
+    {
+      "paper_ids": [
+        "RM_AF_GUIDE_2023",
+        "RM_AF_CONTRA_2023",
+        "RM_AF_DEFINITIONS_PATHOPHYS_2023",
+        "RM_AF_EPIDEMIOLOGY_2023",
+        "RM_AF_EVALUATION_2023",
+        "RM_AF_RISK_MODIFICATION_2023",
+        "RM_AF_ANTICOAG_2023",
+        "RM_AF_RATE_CONTROL_2023",
+        "RM_AF_RHYTHM_CONTROL_2023"
+      ],
+      "document_version": "2023-guideline-jacc-2024-83-109-279",
+      "lifecycle_status": "current",
+      "license_status": "permission_required",
+      "permitted_uses": ["internal_validation"],
+      "commercial_publication_allowed": false,
+      "rights_source_url": "https://www.heart.org/en/about-us/statements-and-policies/copyright-permission-guidelines",
+      "rights_reviewed_at": "2026-07-16",
+      "source_url": "https://www.heart.org/-/media/Files/Professional/Quality-Improvement/Get-With-the-Guidelines/Get-With-The-Guidelines-AFIB/AFib-Month/joglaretal20232023accahaaccphrsguidelineforthediagnosisandmanagementofatrialfibrillation.pdf",
+      "doi": "10.1016/j.jacc.2023.08.017",
+      "publication_year": 2024,
+      "organization": "ACC/AHA/ACCP/HRS",
+      "policy_note": "Local internal validation only; commercial publication remains blocked until written permission and legal review are recorded."
+    }
+  ]
+}

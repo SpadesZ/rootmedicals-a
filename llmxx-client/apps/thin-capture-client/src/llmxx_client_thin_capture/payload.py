@@ -28,6 +28,36 @@ from typing import Any, Dict, List
 from .models import WindowInfo
 
 
+ALLERGIC_RHINITIS_FIXTURE_ID = "allergic_rhinitis_intranasal_steroid"
+AF_ACTIVE_BLEEDING_FIXTURE_ID = "atrial_fibrillation_active_bleeding"
+
+
+def _select_demo_fixture_id(configured_id: Any, clinical_metadata: Dict[str, Any]) -> str:
+    configured = str(configured_id or "").strip()
+    if configured and configured != ALLERGIC_RHINITIS_FIXTURE_ID:
+        return configured
+
+    soap = clinical_metadata.get("soap") if isinstance(clinical_metadata.get("soap"), dict) else {}
+    clinical_text = " ".join(
+        str(value or "")
+        for value in (
+            clinical_metadata.get("normalized_diagnosis"),
+            clinical_metadata.get("dx_text"),
+            soap.get("S"),
+            soap.get("O"),
+            soap.get("A"),
+            soap.get("P"),
+        )
+    ).lower()
+    has_af = "atrial fibrillation" in clinical_text or "afib" in clinical_text
+    has_active_bleeding = any(term in clinical_text for term in ("active bleeding", "active gastrointestinal bleeding", "major bleeding"))
+    has_anticoagulation = any(term in clinical_text for term in ("anticoagulation", "anticoagulant", "apixaban"))
+    # ponytail: Demo-only matcher stays deliberately narrow; add an explicit scenario marker if this grows beyond two fixtures.
+    if has_af and has_active_bleeding and has_anticoagulation:
+        return AF_ACTIVE_BLEEDING_FIXTURE_ID
+    return configured or ALLERGIC_RHINITIS_FIXTURE_ID
+
+
 def build_screenshot_payload(
     *,
     config: Dict[str, Any],
@@ -71,9 +101,9 @@ def build_screenshot_payload(
     demo_config = config.get("demo_fixture", {}) if isinstance(config.get("demo_fixture"), dict) else {}
     env_enabled = str(os.environ.get("LLMXX_CLIENT_DEMO_FIXTURE_ENABLED", "")).strip().lower() in {"1", "true", "yes", "on"}
     if bool(demo_config.get("enabled", False)) or env_enabled:
-        # Demo Fixture marker 必須由控制入口或設定明確打開；一般 live RAG 不會自動帶這兩個欄位。
+        # Demo Fixture marker 必須由控制入口或設定明確打開；Live + Synthetic 不帶這兩個欄位。
         payload["demo_mode"] = str(demo_config.get("mode") or "demo_fixture")
-        payload["demo_fixture_id"] = str(demo_config.get("fixture_id") or "allergic_rhinitis_intranasal_steroid")
+        payload["demo_fixture_id"] = _select_demo_fixture_id(demo_config.get("fixture_id"), safe_clinical_metadata)
     return payload
 
 

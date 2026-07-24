@@ -1,0 +1,41 @@
+{
+  "schema": "llmebm-reference-import-receipt.v1",
+  "plan": {
+    "schema": "llmebm-reference-import-plan.v1",
+    "review_status": "approved",
+    "import_mode": "capabilities-only",
+    "comparison_hash": "sha256:0b39c3e43da1f611081e50560169944aea1c5e6b55d8b0030667a18df160b29c",
+    "approved_capabilities": [
+      "interactive_topic_tabs",
+      "back_to_top"
+    ],
+    "retained_capabilities": [
+      "semantic_article",
+      "complementary_regions",
+      "live_content_status",
+      "topic_tabs",
+      "section_disclosure_state",
+      "aria_control_relationships",
+      "skip_navigation"
+    ],
+    "deferred_capabilities": [
+      "global_search",
+      "fixed_global_header"
+    ],
+    "hierarchy_changes": [],
+    "slot_identity_policy": "preserve_existing_ids",
+    "external_data_retained": [],
+    "runtime_dependency": false,
+    "plan_hash": "sha256:ce434e78d3671c99926d8f457008a95cf0e2b70fb06a21874ae174b4a8a6e7ef"
+  },
+  "execution": {
+    "status": "applied",
+    "database_mutation": true,
+    "hierarchy_mutation": false,
+    "topic_uid": "topic-e55a50c1a5a4445c",
+    "manifest_hash": "sha256:1c5641111e4e3baccaf4a5050c9056d3835dc1160538caafb678e8ca04b30195",
+    "slot_count": 21,
+    "slot_ids_sha256": "sha256:998cb57447165a91b2b68dacbffee0a716acd7fa9eaf77731687e4583524ca09",
+    "slot_identity_unchanged": true
+  }
+}

@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import base64
+import importlib.util
 import re
 from dataclasses import dataclass
 from io import BytesIO
@@ -43,6 +44,11 @@ from ..contracts.schemas import FormalClientPayload, ScreenshotClientPayload
 SOAP_FIELDS = ("S", "O", "A", "P")
 VITAL_FIELDS = ("bp", "hr", "temp", "rr", "spo2")
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
+OCR_RUNTIME_MODULES = ("PIL", "numpy", "cv2", "easyocr")
+
+
+def missing_ocr_dependencies() -> list[str]:
+    return [name for name in OCR_RUNTIME_MODULES if importlib.util.find_spec(name) is None]
 
 LITERAL_REPLACEMENTS = {
     # 這些是目前 demo HIS + EasyOCR 最常見的錯字修正。
@@ -127,14 +133,25 @@ def screenshot_payload_to_formal(payload: ScreenshotClientPayload) -> FormalClie
     # 這裡是 client/server 權責分界：client 傳來的是截圖，不是已 OCR 的 SOAP。
     # 轉成 formal payload 後，後面的 clinical_mapper/RAG/final gate 才能沿用同一份契約。
     image = _decode_png(payload.screenshot.image_b64)
-    ocr = _ServerOCR()
-    layout_regions = [region.model_dump() for region in payload.layout_regions]
-    parsed = ocr.extract_fields(image, layout_regions=layout_regions)
+    metadata = payload.clinical_metadata
+    metadata_soap = metadata.soap.model_dump()
+    metadata_is_complete = bool(normalize_icd_code(metadata.icd10_code or metadata.icd_code)) and all(
+        _clean_text(metadata_soap.get(field, ""), max_length=1200) for field in SOAP_FIELDS
+    )
+    if metadata_is_complete:
+        # ponytail: 完整 HIS sidecar 已是較可靠的結構化來源；未來若 sidecar 只提供部分欄位，
+        # 就會自動回到 OCR 補齊，不在這裡建立第二套合併流程。
+        parsed = {
+            "fields": {field: "" for field in SOAP_FIELDS + VITAL_FIELDS + ("icd_code", "icd_raw_text")},
+            "normalizations": {field: [] for field in SOAP_FIELDS + ("icd_code",)},
+        }
+    else:
+        ocr = _ServerOCR()
+        layout_regions = [region.model_dump() for region in payload.layout_regions]
+        parsed = ocr.extract_fields(image, layout_regions=layout_regions)
     soap = {field: parsed["fields"].get(field, "") for field in SOAP_FIELDS}
     vital_signs = {field: parsed["fields"].get(field, "") for field in VITAL_FIELDS}
     normalizations = {key: list(value) for key, value in parsed["normalizations"].items()}
-    metadata = payload.clinical_metadata
-    metadata_soap = metadata.soap.model_dump()
     for field in SOAP_FIELDS:
         value = _clean_text(metadata_soap.get(field, ""), max_length=1200)
         if value:

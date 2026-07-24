@@ -19,6 +19,7 @@ import json
 
 from lava.adapter import get_adapter
 from lava.llm_model import LLMModel
+from rag_core.core4_ragging.traffic_light import requires_contraindication_hard_gate
 
 
 def _strip_json_fences(raw: str) -> str:
@@ -89,27 +90,36 @@ def _source_from_chunk(chunk: dict) -> dict:
 def _deterministic_candidate(payload: dict, fallback_reason: str) -> dict | None:
     safe_payload = payload if isinstance(payload, dict) else {}
     chunks = safe_payload.get("chunks", [])
-    chunk = _first_traceable_chunk(chunks)
+    case_context = safe_payload.get("case_context") if isinstance(safe_payload.get("case_context"), dict) else {}
+    hard_contraindication = requires_contraindication_hard_gate(chunks, case_context)
+    chunk = next((item for item in chunks if isinstance(item, dict) and item.get("has_contraindication_terms") and _first_traceable_chunk([item])), None) if hard_contraindication else None
+    chunk = chunk or _first_traceable_chunk(chunks)
     if not chunk:
         return None
-    case_context = safe_payload.get("case_context") if isinstance(safe_payload.get("case_context"), dict) else {}
     dx = _clean_text(case_context.get("normalized_diagnosis") or case_context.get("dx") or safe_payload.get("dx_summary"), "the documented diagnosis")
     tx = _clean_text(case_context.get("tx"), "the documented treatment plan")
     source = _source_from_chunk(chunk)
     score = float(chunk.get("score") or 0.0)
     strong_source = source["six_s_level"] in {"System", "Summaries", "Syntheses"} or source["ocebm_level"] in {"Level_1", "Level_2"}
-    light = "green" if strong_source and score >= 0.60 and (source.get("pmid") or source.get("doi")) else "yellow"
+    light = "orange" if hard_contraindication else ("green" if strong_source and score >= 0.60 and (source.get("pmid") or source.get("doi")) else "yellow")
     llmaaj_score = 92 if light == "green" else 72
+    grade_baseline = str(chunk.get("grade_baseline") or "unknown")
+    grade = grade_baseline if grade_baseline in {"Grade_A", "Grade_B", "Grade_C", "unknown"} else f"Grade_{grade_baseline}" if grade_baseline in {"A", "B", "C"} else "unknown"
+    comment = (
+        "Retrieved guideline states that anticoagulation decisions must account for absolute contraindications and balance bleeding against stroke risk."
+        if hard_contraindication
+        else f"Retrieved guideline evidence supports {tx} for {dx}."
+    )
     return {
         "light_color": light,
         "llmaaj_score": llmaaj_score,
-        "short_comment": f"Traceable guideline evidence supports {tx} for {dx}.",
+        "short_comment": "Contraindication and bleeding-risk evidence conflicts with immediate anticoagulation; urgent clinical review is required." if hard_contraindication else f"Traceable guideline evidence supports {tx} for {dx}.",
         "rag_comments": [
             {
-                "topic": "Evidence fit",
-                "comment": f"Retrieved guideline evidence supports {tx} for {dx}.",
+                "topic": "Contraindication and bleeding risk" if hard_contraindication else "Evidence fit",
+                "comment": comment,
                 "evidence_level": source["ocebm_level"],
-                "grade": chunk.get("grade_baseline") or "unknown",
+                "grade": grade,
                 "sources": [source]
             }
         ],

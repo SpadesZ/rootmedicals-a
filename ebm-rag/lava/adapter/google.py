@@ -1,8 +1,10 @@
-# 檔案路徑: rootmedicals-a/ebm-rag/lava/adapter/google.py
-# 產生時間: 2026-06-17 16:10 +08:00
-# 版本: v0.1-交付整理
-# 說明: RAG 內部 LAVA LLM 控制層，負責 provider、任務綁定與任務執行。
-# 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+# 模組定位: Google Gemini 的 LAVA chat/vision/embedding adapter。
+# 主要責任: 建立 Gemini REST payload、解析 response 並沿用 BaseLavaAdapter safety contract。
+# 呼叫來源: LAVA verification、topic vision planner、composer 與 embedding task。
+# 輸入契約: Google model id、secret API key、文字 messages 與已驗證 bounded images。
+# 輸出契約: 統一 chat/embed result，生成結果保留 provider finish_reason 供 bounded fallback 判斷。
+# 安全邊界: key 僅放 request query/header，不得出現在 response、log 或 exception text。
+# 維護提醒: Gemini API schema/capability 改版時先補 fixture test，不用靜態 model 名單代替 verify。
 # ----------------------------------------------------------------------------------------------------
 
 # File Path: ebm-rag/lava/adapter/google.py
@@ -58,34 +60,54 @@ class GoogleAdapter(BaseLavaAdapter):
         except Exception as e:
             return {"ok": False, "error": self.safe_error(e, api_key)}
 
-    async def chat(self, api_key: str, model_id: str, messages: list, temperature: float = 0.1, max_tokens: int = 2048) -> dict:
+    async def chat(
+        self, api_key: str, model_id: str, messages: list,
+        temperature: float = 0.1, max_tokens: int = 2048,
+        response_mime_type: str | None = None,
+    ) -> dict:
         try:
             contents = [{"role": ("user" if m["role"] == "user" else "model"), "parts": [{"text": m["content"]}]} for m in messages]
+            generation_config = {"temperature": temperature, "maxOutputTokens": max_tokens}
+            if response_mime_type:
+                # ponytail: JSON mode is opt-in so verification and non-structured chat callers keep their plain-text contract.
+                generation_config["responseMimeType"] = response_mime_type
             payload = {
                 "contents": contents,
-                "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens}
+                "generationConfig": generation_config,
             }
             async with httpx.AsyncClient(timeout=60) as client:
-                async def do_request():
-                    response = await client.post(
-                        f"{_GEMINI_BASE}/models/{model_id}:generateContent?key={api_key}",
-                        json=payload
-                    )
-                    response.raise_for_status()
-                    return response
-                r = await self.request_with_retries(do_request, attempts=3)
-                data = r.json()
-                candidates = data.get("candidates", [])
-                if not candidates:
-                    raise ValueError(f"Gemini response has no candidates: {data.get('promptFeedback')}")
-                first_candidate = candidates[0]
-                parts = first_candidate.get("content", {}).get("parts", [])
-                text_parts = [str(part.get("text", "")) for part in parts if isinstance(part, dict) and part.get("text")]
-                content = "\n".join(text_parts).strip()
-                if not content:
+                for empty_stop_attempt in range(2):
+                    async def do_request():
+                        response = await client.post(
+                            f"{_GEMINI_BASE}/models/{model_id}:generateContent?key={api_key}",
+                            json=payload
+                        )
+                        response.raise_for_status()
+                        return response
+                    r = await self.request_with_retries(do_request, attempts=3)
+                    data = r.json()
+                    candidates = data.get("candidates", [])
+                    if not candidates:
+                        raise ValueError(f"Gemini response has no candidates: {data.get('promptFeedback')}")
+                    first_candidate = candidates[0]
+                    parts = first_candidate.get("content", {}).get("parts", [])
+                    text_parts = [
+                        str(part.get("text", "")) for part in parts
+                        if isinstance(part, dict) and part.get("text")
+                    ]
+                    content = "\n".join(text_parts).strip()
                     finish_reason = first_candidate.get("finishReason", "unknown")
+                    if content:
+                        return {
+                            "content": content,
+                            "model": model_id,
+                            "provider": self.provider,
+                            "finish_reason": finish_reason,
+                        }
+                    # ponytail: retry exactly one provider-empty STOP; broader retries belong in a durable job queue.
+                    if str(finish_reason).upper() == "STOP" and empty_stop_attempt == 0:
+                        continue
                     raise ValueError(f"Gemini response has no text parts; finishReason={finish_reason}")
-                return {"content": content, "model": model_id, "provider": self.provider}
         except Exception as e:
             raise RuntimeError(self.safe_error(e, api_key)) from None
 
@@ -126,8 +148,20 @@ class GoogleAdapter(BaseLavaAdapter):
             content = "\n".join(text_parts).strip()
             if not content:
                 finish_reason = candidates[0].get("finishReason", "unknown")
+                if str(finish_reason).upper() == "MAX_TOKENS":
+                    return {
+                        "content": "",
+                        "model": model_id,
+                        "provider": self.provider,
+                        "finish_reason": finish_reason,
+                    }
                 raise ValueError(f"Gemini vision response has no text parts; finishReason={finish_reason}")
-            return {"content": content, "model": model_id, "provider": self.provider}
+            return {
+                "content": content,
+                "model": model_id,
+                "provider": self.provider,
+                "finish_reason": candidates[0].get("finishReason"),
+            }
         except Exception as error:
             raise RuntimeError(self.safe_error(error, api_key)) from None
 

@@ -17,8 +17,14 @@ $ClientStart = Join-Path $ClientDir "Start-ThinCapture-System.ps1"
 $ClientStop = Join-Path $ClientDir "Stop-ThinCapture-System.ps1"
 $ClientStatePath = Join-Path $ClientDir "runtime\thin_capture_processes.json"
 
-# 後端 VM 的 HTTPS 網址
-$ServerBaseUrl = "https://34.81.196.75.sslip.io"
+# 後端網址與 thin capture 共用同一份設定，避免控制台顯示的 VM 與實際送件端點分岔。
+$ClientConfigPath = Join-Path $ClientDir "config\default_config.json"
+$ClientConfig = Get-Content -LiteralPath $ClientConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$EndpointUri = [Uri]([string]$ClientConfig.network.endpoint_url)
+if ($EndpointUri.Scheme -notin @("http", "https") -or [string]::IsNullOrWhiteSpace($EndpointUri.Host)) {
+    throw "Invalid network.endpoint_url in $ClientConfigPath"
+}
+$ServerBaseUrl = $EndpointUri.GetLeftPart([UriPartial]::Authority)
 $ServerHealthUrl = "$ServerBaseUrl/api/health"
 $DoctorViewerUrl = "$ServerBaseUrl/demo/latest"
 
@@ -150,6 +156,8 @@ function Get-RootMedicalsStatus {
         $serverMode = "Live RAG (VM)"
         if ($server.checks -and ($server.checks.PSObject.Properties.Name -contains "demo_fixture") -and [string]$server.checks.demo_fixture -eq "enabled") {
             $serverMode = "Demo Fixture (VM)"
+        } elseif ($server.checks -and ($server.checks.PSObject.Properties.Name -contains "rag_synthetic_fallback") -and [string]$server.checks.rag_synthetic_fallback -eq "enabled") {
+            $serverMode = "Live + Synthetic (VM)"
         }
     }
 
@@ -173,10 +181,20 @@ function Stop-ServerAndClient {
 
 function Start-Mode {
     param(
-        [ValidateSet("Live", "DemoFixture")][string]$Mode,
+        [ValidateSet("Live", "LiveSynthetic", "DemoFixture")][string]$Mode,
         [ValidateSet("white", "microsoft_dark", "black")][string]$AlertTheme = "white",
         $LogBox = $null
     )
+    $server = Get-JsonOrNull -Url $ServerHealthUrl
+    if ($null -eq $server -or -not [bool]$server.ok) {
+        throw "Cannot reach llmxx-server: $ServerHealthUrl"
+    }
+    if ($Mode -eq "LiveSynthetic" -and [string]$server.checks.rag_synthetic_fallback -ne "enabled") {
+        throw "VM server is not in Live + Synthetic mode. Start rootmedicals-control.sh with LiveSynthetic on the VM first."
+    }
+    if ($Mode -eq "DemoFixture" -and [string]$server.checks.demo_fixture -ne "enabled") {
+        throw "VM server is not in Demo Fixture mode. Start that mode on the VM first."
+    }
     Stop-ServerAndClient -LogBox $LogBox
     $clientArgs = @()
     if ($Mode -eq "DemoFixture") {
@@ -208,6 +226,10 @@ if ($Action -eq "Stop") {
 }
 if ($Action -eq "Live") {
     Start-Mode -Mode "Live" -AlertTheme $AlertTheme
+    exit 0
+}
+if ($Action -eq "LiveSynthetic") {
+    Start-Mode -Mode "LiveSynthetic" -AlertTheme $AlertTheme
     exit 0
 }
 if ($Action -eq "DemoFixture") {
@@ -308,7 +330,7 @@ $form.Controls.Add($logBox)
 
 function Set-ButtonsEnabled {
     param([bool]$Enabled)
-    foreach ($button in @($btnLive, $btnFixture, $btnStop, $btnRefresh, $btnViewer)) {
+    foreach ($button in @($btnLive, $btnDemo, $btnFixture, $btnStop, $btnRefresh, $btnViewer)) {
         $button.Enabled = $Enabled
     }
 }
@@ -402,7 +424,7 @@ function Show-AlertThemeDialog {
 }
 
 function Start-ModeFromUi {
-    param([ValidateSet("Live", "DemoFixture")][string]$Mode)
+    param([ValidateSet("Live", "LiveSynthetic", "DemoFixture")][string]$Mode)
     $theme = Show-AlertThemeDialog
     if ([string]::IsNullOrWhiteSpace($theme)) {
         Add-LogLine "Start cancelled before launch." $logBox
@@ -412,7 +434,7 @@ function Start-ModeFromUi {
 }
 
 $btnLive.Add_Click({ Start-ModeFromUi -Mode "Live" })
-$btnDemo.Add_Click({ Start-ModeFromUi -Mode "Live" })
+$btnDemo.Add_Click({ Start-ModeFromUi -Mode "LiveSynthetic" })
 $btnFixture.Add_Click({ Start-ModeFromUi -Mode "DemoFixture" })
 $btnStop.Add_Click({ Run-UiAction { Stop-ServerAndClient -LogBox $logBox } })
 $btnRefresh.Add_Click({ Run-UiAction { Add-LogLine "Status refreshed." $logBox } })

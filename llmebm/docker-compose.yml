@@ -13,8 +13,6 @@
 #   2. 獨立對外開放 33300 埠口，以便優先檢視 DynaMed Plus 風格前端 UI。
 #   3. 正確跨目錄掛載 shared_data 與 .env 環境變數，並掛載 app 目錄支援 UI 熱更新。
 # ----------------------------------------------------------------------------------------------------
-version: '3.8'
-
 services:
   llmebm-standalone:
     build: 
@@ -36,6 +34,31 @@ services:
       - ../.env.topic
     environment:
       - EBM_RAG_BASE_URL=${EBM_RAG_BASE_URL:-http://host.docker.internal:33301}
+      # Topic/review secrets are loaded from the git-ignored ../.env.topic file above.
+    restart: unless-stopped
+    networks:
+      - ebm_local_net
+
+  llmebm-automation:
+    build:
+      context: .
+      dockerfile: Dockerfile.scanner
+    container_name: rootmedicals_llmebm_automation
+    depends_on:
+      - llmebm-standalone
+    volumes:
+      - ./data:/app/data
+      - ./app:/app/app
+      - ./tools:/app/tools
+    env_file:
+      - ../.env
+      - ../.env.topic
+    environment:
+      - LLMEBM_AUTOMATION_BASE_URL=http://llmebm-standalone:8000
+      - LLMEBM_TOPIC_SCAN_ROOT=/app/data/runtime/topic_scans
+      - LLMEBM_AUTOMATION_POLL_SECONDS=5
+      - LLMEBM_AUTOMATION_RECONCILE_SECONDS=300
+      - LLMEBM_INTERRUPT_GENERATION_JOBS_ON_START=0
     restart: unless-stopped
     networks:
       - ebm_local_net

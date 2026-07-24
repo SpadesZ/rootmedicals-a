@@ -1,21 +1,13 @@
 /*
- * 檔案路徑: rootmedicals-a/llmebm/app/static/js/app.js
- * 產生時間: 2026-06-17 16:10 +08:00
- * 版本: v0.1-交付整理
- * 說明: llmebm 知識庫 UI 靜態資源。
- * 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+ * 模組定位: llmebm 共用前端互動與首頁產品入口。
+ * 主要責任: 同步品牌/字級、控制 About dialog、執行自有 taxonomy 搜尋，並保留 Admin taxonomy/sidebar 編輯行為。
+ * 呼叫來源: index.html、specialty.html 與 admin.html 的共用靜態資源。
+ * 輸入契約: llmebm-owned settings/search/taxonomy APIs 與可信的使用者 DOM 事件。
+ * 輸出契約: About 使用原生 modal dialog；搜尋結果只導向 canonical Topic deep link；未完成入口不得偽裝成可用連結。
+ * 安全邊界: 搜尋結果只以 textContent 建立；不得把 query 或 API 文字拼成可執行 HTML。
+ * 維護提醒: 共用檔變更須驗 index/topic/admin 三個載入面，並同步 asset cache key。
  * ----------------------------------------------------------------------------------------------------
  */
-
-/*
-# 路徑: rootmedicals-a/llmebm/app/static/js/app.js
-# 版本: v1.5
-# 更版時間: 2026-05-09 14:00
-# 說明: 
-#   1. 絕對遵守第二定律：100% 保留所有時序修復、品牌設定、字體縮放、本地搜尋與 Taxonomy CRUD API 邏輯。
-#   2. [v1.5 重大擴充] 於檔案底部新增 Sidebar Topic Builder 的雙畫布連動邏輯。全量展開不刪減。
-# ----------------------------------------------------------------------------------------------------
-*/
 
 document.addEventListener("DOMContentLoaded", () => {
     
@@ -67,6 +59,26 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     loadBrandSettings();
+
+    // ==========================================
+    // 0.25 共用 About 對話框
+    // ==========================================
+    const aboutButton = document.getElementById("btn-about");
+    const aboutDialog = document.getElementById("about-dialog");
+    const aboutCloseButton = document.getElementById("btn-about-close");
+
+    if (aboutButton && aboutDialog && aboutCloseButton) {
+        aboutButton.addEventListener("click", () => {
+            aboutDialog.showModal();
+            aboutButton.setAttribute("aria-expanded", "true");
+        });
+
+        aboutCloseButton.addEventListener("click", () => aboutDialog.close());
+        aboutDialog.addEventListener("close", () => {
+            aboutButton.setAttribute("aria-expanded", "false");
+            aboutButton.focus();
+        });
+    }
 
     // ==========================================
     // 0.5 Admin 後台設定表單邏輯
@@ -219,23 +231,81 @@ document.addEventListener("DOMContentLoaded", () => {
     renderSidebar("condition");
 
     // ==========================================
-    // 2. 全局搜尋 (Global Search) 自動補全模擬
+    // 2. 全局搜尋 (Global Search)：只查 llmebm-owned topic/heading index
     // ==========================================
     const globalInput = document.getElementById("global-search-input");
     const dropdown = document.getElementById("autocomplete-dropdown");
     const gotoList = document.getElementById("goto-list");
     const searchforList = document.getElementById("searchfor-list");
+    const globalSearchButton = document.getElementById("global-search-btn");
 
     if (globalInput && dropdown && gotoList && searchforList) {
-        globalInput.addEventListener("input", (e) => {
-            const query = e.target.value.trim().toLowerCase();
-            if (query.length > 2) {
-                gotoList.innerHTML = `<li>${query} fibrillation</li><li>Thromboembolic prophylaxis in ${query} fibrillation</li>`;
-                searchforList.innerHTML = `<li>${query}</li><li>${query} flutter</li>`;
-                dropdown.classList.remove("hidden");
-            } else {
+        let searchRequest = 0;
+        let currentSearchResults = [];
+
+        function searchResultUrl(row) {
+            return `/topic/${encodeURIComponent(row.topic_name)}#slot=${encodeURIComponent(row.slot_id)}`;
+        }
+
+        function renderSearchResults(results) {
+            gotoList.replaceChildren();
+            searchforList.replaceChildren();
+            results.forEach((row) => {
+                const item = document.createElement("li");
+                const button = document.createElement("button");
+                button.type = "button";
+                button.textContent = `${row.heading} — ${row.topic_name.replaceAll("-", " ")}`;
+                button.addEventListener("click", () => { window.location.href = searchResultUrl(row); });
+                item.appendChild(button);
+                gotoList.appendChild(item);
+            });
+            const summary = document.createElement("li");
+            summary.textContent = results.length
+                ? `${results.length} matching llmebm headings. Select one or press Enter for the first result.`
+                : "No matching llmebm topic or heading.";
+            searchforList.appendChild(summary);
+            dropdown.classList.remove("hidden");
+        }
+
+        async function runGlobalSearch() {
+            const query = globalInput.value.trim();
+            const thisRequest = ++searchRequest;
+            if (query.length < 2) {
+                currentSearchResults = [];
+                gotoList.replaceChildren();
+                searchforList.replaceChildren();
                 dropdown.classList.add("hidden");
+                return;
             }
+            try {
+                const response = await fetch(`/api/v1/search?q=${encodeURIComponent(query)}&limit=8`);
+                const payload = await response.json();
+                if (thisRequest !== searchRequest) return;
+                currentSearchResults = response.ok && Array.isArray(payload.results) ? payload.results : [];
+                renderSearchResults(currentSearchResults);
+            } catch (error) {
+                if (thisRequest !== searchRequest) return;
+                currentSearchResults = [];
+                gotoList.replaceChildren();
+                searchforList.replaceChildren();
+                const failure = document.createElement("li");
+                failure.textContent = "Search is temporarily unavailable.";
+                searchforList.appendChild(failure);
+                dropdown.classList.remove("hidden");
+            }
+        }
+
+        globalInput.addEventListener("input", runGlobalSearch);
+        globalInput.addEventListener("keydown", (event) => {
+            if (event.key === "Escape") dropdown.classList.add("hidden");
+            if (event.key === "Enter" && currentSearchResults.length) {
+                event.preventDefault();
+                window.location.href = searchResultUrl(currentSearchResults[0]);
+            }
+        });
+        if (globalSearchButton) globalSearchButton.addEventListener("click", () => {
+            if (currentSearchResults.length) window.location.href = searchResultUrl(currentSearchResults[0]);
+            else runGlobalSearch();
         });
         document.addEventListener("click", (e) => {
             if (!e.target.closest('.search-box-container')) dropdown.classList.add("hidden");

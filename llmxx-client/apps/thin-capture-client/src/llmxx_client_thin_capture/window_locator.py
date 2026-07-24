@@ -103,7 +103,7 @@ class WindowLocator:
         if self.target_config.get("bring_to_front", True):
             try:
                 # mss 擷取的是可見 framebuffer，因此目標視窗不能被其他視窗遮住。
-                win32gui.ShowWindow(hwnd, win32con.SW_SHOWNORMAL)
+                win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
                 win32gui.SetWindowPos(
                     hwnd,
                     win32con.HWND_TOPMOST,

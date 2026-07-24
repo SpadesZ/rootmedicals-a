@@ -1,15 +1,10 @@
-# 檔案路徑: rootmedicals-a/ebm-rag/docker-compose-rag.yml
-# 產生時間: 2026-06-17 16:10 +08:00
-# 版本: v0.1-交付整理
-# 說明: EBM-RAG 服務入口、Docker 設定、文件或依賴描述。
-# 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
-# ----------------------------------------------------------------------------------------------------
-
-# File Path: ebm-rag/docker-compose-rag.yml
-# Timestamp: 2026-06-09
-# Version: v0.6
-# Description: EBM-RAG Docker Compose stack.
-#              Runs FastAPI on host port 33301 and Qdrant on 6333/6334 with persistent local data volumes.
+# 模組定位: EBM-RAG FastAPI 與 Qdrant 的本機/交付 compose runtime。
+# 主要責任: 建置服務、掛載持久資料、注入非硬編碼設定並提供健康檢查。
+# 呼叫來源: 開發者、RootMedicals 控制流程與交付環境的 docker compose。
+# 輸入契約: 根目錄 .env/.env.topic、ebm-rag source/data 與可用 Docker engine。
+# 輸出契約: host 33301 的 RAG API、6333/6334 的 Qdrant，以及可判定的 container health。
+# 安全邊界: secrets 只從未追蹤 env file 注入；健康檢查不得繞過 readiness/quality gate。
+# 維護提醒: corpus/readiness 成本變化時量測 health latency；若持續成長，分離或快取 readiness。
 # ----------------------------------------------------------------------------------------------------
 services:
   ebm-rag-engine:
@@ -40,10 +35,11 @@ services:
     depends_on:
       qdrant:
         condition: service_healthy
+    # ponytail: /health includes an O(indexed chunks) quality gate; keep timeout headroom until readiness is cached/separated.
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/rag/health', timeout=5)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/rag/health', timeout=12)"]
       interval: 30s
-      timeout: 10s
+      timeout: 15s
       retries: 5
       start_period: 20s
     networks:

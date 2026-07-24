@@ -1,8 +1,10 @@
-# 檔案路徑: rootmedicals-a/ebm-rag/lava/task_registry.py
-# 產生時間: 2026-06-17 16:10 +08:00
-# 版本: v0.1-交付整理
-# 說明: RAG 內部 LAVA LLM 控制層，負責 provider、任務綁定與任務執行。
-# 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+# 模組定位: ebm-rag LAVA task/capability 的單一 allowlist registry。
+# 主要責任: 宣告 task id、executor module、required flag 與正確 capability。
+# 呼叫來源: LLMModel defaults、LAVA setup UI、readiness 與 invoke router。
+# 輸入契約: 靜態、唯一 task definitions；module 必須存在且 capability 可被 adapter 驗證。
+# 輸出契約: RAG_TASKS/TASK_IDS，Topic plan/compose 維持 optional readiness。
+# 安全邊界: 未登錄 task 不可由 invoke 任意 import；wrong-capability connection 不得 binding。
+# 維護提醒: 新 task 先判斷是否真為全域 blocker，Topic optional task 不得拖垮既有 RAG。
 # ----------------------------------------------------------------------------------------------------
 
 # File Path: ebm-rag/lava/task_registry.py

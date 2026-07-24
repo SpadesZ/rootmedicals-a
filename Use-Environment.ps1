@@ -1,7 +1,10 @@
-# 檔案路徑: rootmedicals-a/Use-Environment.ps1
-# 說明: 在 DEV(本機) 與 VM(交付) 兩份環境 profile 之間切換。
-#       把 env-profiles/<profile>.env 複製成根目錄的 .env（docker-compose 讀的檔）。
-#       只動 .env / .env.bak；secret 檔 .env.topic 完全不碰。
+# 模組定位: RootMedicals DEV 與 VM delivery profile 的受控切換入口。
+# 主要責任: 將 env-profiles/<profile>.env 原子寫入根目錄 .env，並保留前一版備份。
+# 呼叫來源: 開發者在 repo root 手動執行；docker-compose 只讀產生的 .env。
+# 輸入契約: Profile 僅允許 dev 或 vm；profile 必須存在且不含 topic/provider secrets。
+# 輸出契約: UTF-8 no-BOM 的 .env 與可選 .env.bak；未確認 VM profile 會在寫檔前失敗。
+# 安全邊界: 不寫入或輸出 .env.topic 值與 LAVA settings；不可把 VM 未確認值冒充已驗證配置。
+# 維護提醒: 新增 profile 時同步 ValidateSet、env-profiles README 與 header contract test。
 # 用法:
 #   .\Use-Environment.ps1 -Profile dev
 #   .\Use-Environment.ps1 -Profile vm
@@ -46,6 +49,12 @@ if (-not (Test-Path -LiteralPath $SourceProfile)) {
     throw "找不到 profile 檔: $SourceProfile"
 }
 
+$content = [System.IO.File]::ReadAllText($SourceProfile)
+# ponytail: `# CONFIRM` 是單一 fail-closed gate；profile 若增為機器產生格式，再升級成結構化 validation。
+if ($Profile -eq "vm" -and $content -match '(?m)#\s*CONFIRM\b') {
+    throw "vm profile 仍含 # CONFIRM；請先以實機 service DNS/URL 取代候選值並移除標記。未變更 .env。"
+}
+
 # 備份現有 .env（避免覆蓋掉本機臨時手動值）。
 if (Test-Path -LiteralPath $ActiveEnv) {
     Copy-Item -LiteralPath $ActiveEnv -Destination $BackupEnv -Force
@@ -53,7 +62,6 @@ if (Test-Path -LiteralPath $ActiveEnv) {
 }
 
 # 以 UTF-8 無 BOM 寫入，docker/python 才不會讀到 BOM。
-$content = [System.IO.File]::ReadAllText($SourceProfile)
 Write-NoBom -Path $ActiveEnv -Text $content
 Write-Host "已切換 active profile -> $Profile   (env-profiles\$Profile.env -> .env)"
 
@@ -65,10 +73,20 @@ if (-not (Test-Path -LiteralPath $TopicSecret)) {
     }
 } else {
     Write-Host ".env.topic 已存在（secret 未更動）"
-}
-
-if ($Profile -eq "vm") {
-    Write-Warning "vm.env 內含標記為 # CONFIRM 的 host/URL 值，交付前請確認 VM 實際服務位址。"
+    $secretKeys = @(
+        "LLMEBM_TOPIC_GENERATION_TOKEN",
+        "LLMEBM_REVIEW_ADMIN_TOKEN",
+        "LLMEBM_HIERARCHY_ADMIN_TOKEN"
+    )
+    $secretText = [System.IO.File]::ReadAllText($TopicSecret)
+    $missingKeys = @($secretKeys | Where-Object {
+        $key = [Regex]::Escape($_)
+        $secretText -notmatch "(?m)^\s*$key\s*=\s*\S+\s*$"
+    })
+    if ($missingKeys.Count -gt 0) {
+        # ponytail: 只檢查 key 是否有非空值；secret 強度留給部署 secret manager／rotation policy。
+        Write-Warning (".env.topic 缺少或未設定: {0}；受保護 API 會 fail closed。" -f ($missingKeys -join ", "))
+    }
 }
 
 Write-Host ""

@@ -1,39 +1,38 @@
-# 檔案路徑: rootmedicals-a/ebm-rag/rag_core/core5_api/router.py
-# 產生時間: 2026-06-17 16:10 +08:00
-# 版本: v0.1-交付整理
-# 說明: RAG Core5 API 層，對外提供 health/check/admin 等服務端路由。
-# 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+# 模組定位: ebm-rag Core5 HTTP API 與 readiness gate。
+# 主要責任: 驗證請求、檢查 LAVA/SQLite/Qdrant readiness、公開 RAG、Topic content 與 mapping review endpoints。
+# 呼叫來源: llmebm、llmxx-server、管理 UI 與本機 smoke/contract checks。
+# 輸入契約: Pydantic request models、loopback/token 授權、active embedding index。
+# 輸出契約: fail-closed HTTP JSON、Topic sections、global/scoped evidence revisions 與可診斷 readiness。
+# 安全邊界: Topic generation 限 loopback 或 shared token；未通過 readiness 不執行臨床檢索。
+# 維護提醒: generate section 必須帶自己的 scoped revision；global revision 僅供舊 caller fallback。
 # ----------------------------------------------------------------------------------------------------
 
-# File Path: ebm-rag/rag_core/core5_api/router.py
-# Timestamp: 2026-06-17 14:35 +08:00
-# Version: v1.0
-# Description: Core5 RAG API 路由。
-#              掛載至 main_rag.py；提供 /health、/index、/chunks、/query、/check、/retrieval、/literature/search。
-#              查詢端 fail-closed；OCR 無有效文字時支援 text-PDF native extraction fallback。
-# Change Notes:
-#              - v0.8: Let /check accept safe filters so the llmxx closed loop
-#                can explicitly enable demo_synthetic_fallback when requested.
-#              - v0.9: Carry ICD-10 into /check case_context and dx_summary as
-#                a disease-classification anchor.
-#              - v1.0: Derive narrow retrieval metadata filters from supported
-#                ICD families so closed-loop checks do not mix unrelated
-#                disease chunks before final gating.
-# ----------------------------------------------------------------------------------------------------
-
+import hashlib
 import hmac
 import json
 import os
 import aiosqlite
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Body, HTTPException, Query, Request
 
-from rag_core.core5_api.schemas import QueryRequest, CheckRequest, TopicContentGenerateRequest
+from rag_core.core5_api.schemas import (
+    CheckRequest,
+    QueryRequest,
+    SourceDetailsRequest,
+    SourceUseGateRequest,
+    TopicContentGenerateRequest,
+    TopicEvidenceRevisionRequest,
+    TopicScopeReviewApproveRequest,
+    TopicScopeReviewStatusRequest,
+)
 from rag_core.common import state_db as sdb
 from rag_core.common.config import RAG_DB_PATH
+from rag_core.common.evidence_scope import canonical_topic_key, normalize_slot_keys
 from rag_core.core3_vector_store.collections import collection_name
 from rag_core.core3_vector_store.qdrant_client import health_check as qdrant_health
 from rag_core.core1_ingestion.pipeline import run_ingestion
+from rag_core.core1_ingestion.source_policy import build_public_source_details, evaluate_source_use
 from rag_core.core2_embeddings.pipeline import run_embedding_pipeline
 from rag_core.core3_vector_store.indexer import index_paper as qdrant_index
 from rag_core.core4_ragging.pipeline import run_query
@@ -68,8 +67,51 @@ _ALLOWED_EXTERNAL_META_KEYS = {
     "guideline_year",
     "source_url",
     "guideline_url",
-    "citation_text"
+    "citation_text",
+    "topic_key",
+    "slot_keys",
+    "slot_keys_by_chunk",
 }
+
+
+@router.post("/sources/use-gate")
+async def source_use_gate_endpoint(payload: SourceUseGateRequest):
+    """Return a fail-closed paper-level usage decision for review/publish callers."""
+    metadata = await sdb.get_paper_metadata(payload.paper_ids)
+    policies = {
+        paper_id: value.get("source_policy")
+        for paper_id, value in metadata.items()
+        if isinstance(value.get("source_policy"), dict)
+    }
+    return evaluate_source_use(policies, payload.paper_ids, payload.required_use)
+
+
+@router.post("/sources/details")
+async def source_details_endpoint(payload: SourceDetailsRequest):
+    """Return only reviewed public metadata; never expose local PDF paths, OCR text, or vectors."""
+    metadata = await sdb.get_paper_metadata(payload.paper_ids)
+    return build_public_source_details(metadata, payload.paper_ids)
+
+
+def _combined_evidence_revision(signatures: list[dict]) -> str | None:
+    fingerprints = [
+        {
+            "provider": item.get("provider"),
+            "model": item.get("model"),
+            "dim": item.get("dim"),
+            "indexed_chunk_count": item.get("indexed_chunk_count"),
+            "evidence_revision": item.get("evidence_revision"),
+        }
+        for item in signatures
+        if item.get("evidence_revision")
+    ]
+    if not fingerprints:
+        return None
+    fingerprints.sort(key=lambda item: (
+        str(item["provider"]), str(item["model"]), int(item["dim"] or 0)
+    ))
+    payload = json.dumps(fingerprints, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _clean_stream_text(block: dict) -> str:
@@ -100,6 +142,31 @@ def _external_meta_from_body(body: dict | None) -> dict | None:
     safe_meta = {}
     for key, value in raw_meta.items():
         if key in _ALLOWED_EXTERNAL_META_KEYS and value not in (None, "", "unknown"):
+            if key == "topic_key" and canonical_topic_key(value) == "*":
+                raise HTTPException(status_code=400, detail="external_meta.topic_key must identify a specific topic")
+            if key == "slot_keys":
+                if not isinstance(value, list) or not 1 <= len(value) <= 200:
+                    raise HTTPException(status_code=400, detail="external_meta.slot_keys must contain 1 to 200 items")
+                normalized_slots = normalize_slot_keys(value)
+                if normalized_slots == ["*"] and value != ["*"]:
+                    raise HTTPException(status_code=400, detail="external_meta.slot_keys contains an invalid slot key")
+                value = normalized_slots
+            if key == "slot_keys_by_chunk":
+                if not isinstance(value, dict) or not 1 <= len(value) <= 500:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="external_meta.slot_keys_by_chunk must contain 1 to 500 chunk mappings",
+                    )
+                normalized_by_chunk = {}
+                for chunk_ref, raw_slots in value.items():
+                    chunk_ref = str(chunk_ref or "").strip()
+                    normalized_slots = normalize_slot_keys(raw_slots)
+                    if not chunk_ref or len(chunk_ref) > 300:
+                        raise HTTPException(status_code=400, detail="slot_keys_by_chunk has an invalid chunk key")
+                    if normalized_slots == ["*"] and raw_slots != ["*"]:
+                        raise HTTPException(status_code=400, detail="slot_keys_by_chunk contains an invalid slot key")
+                    normalized_by_chunk[chunk_ref] = normalized_slots
+                value = normalized_by_chunk
             safe_meta[key] = value
     return safe_meta or None
 
@@ -173,7 +240,8 @@ async def _rag_readiness(require_indexed_chunks: bool = True) -> dict:
         "indexed_chunk_count": 0,
         "signatures": [],
         "collections": [],
-        "quality": None
+        "quality": None,
+        "evidence_revision": None,
     }
     reasons = []
 
@@ -197,7 +265,8 @@ async def _rag_readiness(require_indexed_chunks: bool = True) -> dict:
             "indexed_chunk_count": sum(int(signature.get("indexed_chunk_count") or 0) for signature in active_signatures),
             "signatures": active_signatures,
             "collections": active_collections,
-            "quality": await sdb.get_indexed_chunk_quality_summary(active_provider, active_model)
+            "quality": await sdb.get_indexed_chunk_quality_summary(active_provider, active_model),
+            "evidence_revision": _combined_evidence_revision(active_signatures),
         }
 
     if not db_ok:
@@ -330,6 +399,100 @@ async def topic_content_readiness_endpoint():
     return await _topic_readiness()
 
 
+@router.post("/topic-content/revisions")
+async def topic_content_revisions_endpoint(body: TopicEvidenceRevisionRequest):
+    embedding_conn = LLMModel.get_connection_for_task("embedding_dense")
+    if not embedding_conn:
+        raise HTTPException(status_code=503, detail="active embedding index is unavailable")
+    embedding_conn = dict(embedding_conn)
+    provider = str(embedding_conn.get("provider") or "")
+    model = str(embedding_conn.get("model_id") or "")
+    signatures = [
+        signature for signature in await sdb.get_indexed_embedding_signatures()
+        if signature.get("provider") == provider and signature.get("model") == model
+    ]
+    if not provider or not model or not signatures:
+        raise HTTPException(status_code=503, detail="active embedding index is unavailable")
+    revisions = await sdb.get_topic_evidence_revisions(
+        body.topic_key,
+        body.slot_ids,
+        provider=provider,
+        model=model,
+    )
+    return {
+        "topic_key": body.topic_key,
+        "evidence_revisions": revisions,
+        "evidence_revision": _combined_evidence_revision(signatures),
+    }
+
+
+@router.post("/topic-content/scope-reviews/status")
+async def topic_scope_review_status_endpoint(body: TopicScopeReviewStatusRequest):
+    """Expose current append-only review alignment without mutating scopes or review history."""
+    statuses = await sdb.get_evidence_scope_review_statuses(body.topic_key, body.slot_ids)
+    return {
+        "schema": "rootmedicals-scope-review-status.v1",
+        "topic_key": body.topic_key,
+        "requested": len(body.slot_ids),
+        "reviewed": sum(bool(item.get("reviewed")) for item in statuses.values()),
+        "current_approved": sum(bool(item.get("current_approved")) for item in statuses.values()),
+        "statuses": statuses,
+    }
+
+
+@router.post("/topic-content/scope-reviews/approve-current")
+async def topic_scope_review_approve_current_endpoint(body: TopicScopeReviewApproveRequest, request: Request):
+    """Append one demo mapping approval bound to the exact current evidence scope."""
+    _authorize_topic_content_request(request)
+    before = (await sdb.get_evidence_scope_review_statuses(body.topic_key, [body.slot_id]))[body.slot_id]
+    if not before.get("current_source_ids"):
+        raise HTTPException(status_code=409, detail="The selected slot has no current evidence sources to approve")
+    if before.get("current_approved"):
+        return {
+            "schema": "rootmedicals-scope-review-approval.v1",
+            "topic_key": body.topic_key,
+            "changed": False,
+            "status": before,
+        }
+
+    reviewed_at = datetime.now(timezone.utc).isoformat()
+    material = {
+        "topic_key": body.topic_key,
+        "slot_key": body.slot_id,
+        "scope_revision": before["current_scope_revision"],
+        "source_ids": before["current_source_ids"],
+        "decision": "approved_demo",
+        "reviewed_by": body.reviewed_by,
+        "reason": body.reason,
+    }
+    digest = hashlib.sha256(
+        json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    recorded = await sdb.record_evidence_scope_review_batch({
+        "review_batch_id": f"scope-review-ui-{digest[:24]}",
+        "mapping_version": before["current_scope_revision"],
+        "topic_key": body.topic_key,
+        "reviewed_by": body.reviewed_by,
+        "reviewed_at": reviewed_at,
+        "review_hash": f"sha256:{digest}",
+        "slots": [{
+            "slot_key": body.slot_id,
+            "decision": "approved_demo",
+            "reason": body.reason,
+            "source_ids": before["current_source_ids"],
+        }],
+    })
+    after = (await sdb.get_evidence_scope_review_statuses(body.topic_key, [body.slot_id]))[body.slot_id]
+    if not after.get("current_approved"):
+        raise HTTPException(status_code=409, detail="The evidence scope changed while approval was recorded")
+    return {
+        "schema": "rootmedicals-scope-review-approval.v1",
+        "topic_key": body.topic_key,
+        "changed": bool(recorded.get("inserted")),
+        "status": after,
+    }
+
+
 @router.post("/topic-content/generate")
 async def generate_topic_content_endpoint(body: TopicContentGenerateRequest, request: Request):
     from lava.matching_tasks.topic_content_plan import validate_topic_manifest
@@ -347,13 +510,27 @@ async def generate_topic_content_endpoint(body: TopicContentGenerateRequest, req
     readiness = await _topic_readiness()
     if not readiness["ready"]:
         _raise_topic_not_ready(readiness)
-    return await generate_topic_content(
+    result = await generate_topic_content(
         manifest=manifest,
         screenshots=[item.model_dump() for item in body.screenshots],
         only_slot_ids=body.only_slot_ids,
         filters=body.filters,
         top_k=body.top_k,
     )
+    active = readiness.get("active_embedding_index") or {}
+    evidence_revision = active.get("evidence_revision")
+    section_slot_ids = [section["slot_id"] for section in result.get("sections", [])]
+    evidence_revisions = await sdb.get_topic_evidence_revisions(
+        canonical_topic_key(manifest["topic_name"]),
+        section_slot_ids,
+        provider=active.get("provider") or "",
+        model=active.get("model") or "",
+    ) if section_slot_ids else {}
+    result["evidence_revision"] = evidence_revision
+    result["evidence_revisions"] = evidence_revisions
+    for section in result.get("sections", []):
+        section["evidence_revision"] = evidence_revisions.get(section["slot_id"], evidence_revision)
+    return result
 
 
 # ──────────────────────────────────────────────

@@ -1,21 +1,12 @@
 <!--
-  檔案路徑: rootmedicals-a/llmebm/app/templates/_header.html
-  產生時間: 2026-06-17 16:10 +08:00
-  版本: v0.1-交付整理
-  說明: llmebm 知識庫 UI 模板。
-  交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+  模組定位: llmebm 首頁、Topic 與 Admin 共用頂部導覽及 About 對話框。
+  主要責任: 呈現品牌、管理入口、字級控制與產品用途說明。
+  呼叫來源: index.html、specialty.html 與 admin.html 的 Jinja include。
+  輸入契約: _brand.html、app.js 與 style.css 提供的既有共用介面。
+  輸出契約: About 必須是可鍵盤操作的按鈕，並開啟具名稱的原生 modal dialog。
+  安全邊界: 僅呈現自有靜態產品說明；不載入外部內容、不執行管理操作。
+  維護提醒: 變更共用控制時須同步驗證 Home、Topic、Admin 與窄 viewport。
   ----------------------------------------------------------------------------------------------------
--->
-
-<!-- 
-# 路徑: rootmedicals-a/llmebm/app/templates/_header.html
-# 版本: v0.3
-# 更版時間: 2026-05-05 18:40
-# 說明: 
-#   1. 移除不必要之 Help 與 Remote Access 連結。
-#   2. 將字體控制群組 (A-/A/A+) 移至導覽列最右側。
-#   3. 新增垂直分隔線以優化版面視覺，並確保代碼行數增加。
-# ----------------------------------------------------------------------------------------------------
 -->
 <header class="top-bar">
     
@@ -32,7 +23,16 @@
     <!-- 導覽列右側：關於、管理員與全域設定 -->
     <div class="top-bar-right" style="display: flex; align-items: center;">
         
-        <span class="top-link">&#8505; About</span>
+        <button
+            id="btn-about"
+            class="top-link top-link-button"
+            type="button"
+            aria-haspopup="dialog"
+            aria-controls="about-dialog"
+            aria-expanded="false"
+        >
+            &#8505; About
+        </button>
         
         <!-- 系統管理員入口 (Admin) -->
         <a 
@@ -56,3 +56,14 @@
 
     </div>
 </header>
+
+<dialog id="about-dialog" class="about-dialog" aria-labelledby="about-dialog-title">
+    <div class="about-dialog-header">
+        <h2 id="about-dialog-title">RootMedicals EBM-Dx</h2>
+        <button id="btn-about-close" class="about-dialog-close" type="button" aria-label="Close About">&times;</button>
+    </div>
+    <p>Evidence-backed dynamic topic workspace.</p>
+    <p>Generated sections require citations from the local evidence index.</p>
+    <p>Draft content must complete clinical review before publication.</p>
+    <p class="about-dialog-build">Current build: local development / demo preview.</p>
+</dialog>

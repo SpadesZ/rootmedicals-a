@@ -1,9 +1,11 @@
 <!--
-  檔案路徑: rootmedicals-a/llmebm/app/templates/specialty.html
-  產生時間: 2026-06-17 16:10 +08:00
-  版本: v0.1-交付整理
-  說明: llmebm 知識庫 UI 模板。
-  交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+  模組定位: llmebm 動態 Topic Page 的靜態 heading 與內容容器模板。
+  主要責任: 呈現穩定 sidebar slots、真實 Topic/Updates panels 與安全 JSON renderer 掛載點。
+  呼叫來源: main_ebm.py 的 /topic/{topic_name} 與 browser contract validation。
+  輸入契約: server-rendered topic/taxonomy 資料；slot 內容只由 topic_content.js 寫入。
+  輸出契約: heading 由 DOM 提供；Topic 載入 component JSON；Updates 只呈現已有 slot 狀態。
+  安全邊界: 不渲染模型 HTML；動態文字必須經 textContent/createElement。
+  維護提醒: 修改 data-slot-id、ARIA 或內容 target 時，必須同步 scanner 與 renderer tests。
   ----------------------------------------------------------------------------------------------------
 -->
 
@@ -13,17 +15,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ topic_name }} - EBMDx</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260717-about-1">
     <link rel="stylesheet" href="/static/css/allfont.css">
     <style>
-        body { margin: 0; padding: 0; background-color: #fff; overflow: hidden; }
+        body { margin: 0; padding: 0; background-color: #fff; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
         .global-nav-bar { background-color: #006e82; color: #fff; display: flex; align-items: center; padding: 0 30px; box-shadow: 0 2px 5px rgba(0,0,0,0.15); z-index: 10; position: relative;}
         .global-nav-bar ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 25px; }
         .global-nav-bar li { padding: 12px 0; }
-        .global-nav-bar a { color: #fff; text-decoration: none; font-size: 15px; font-weight: 500; transition: all 0.2s ease;}
+        .global-nav-bar a, .global-nav-disabled { color: #fff; text-decoration: none; font-size: 15px; font-weight: 500; transition: all 0.2s ease;}
         .global-nav-bar a:hover { opacity: 0.85; }
+        .global-nav-disabled { opacity: 0.55; cursor: not-allowed; }
 
-        .specialty-layout { display: flex; height: calc(100vh - 120px); width: 100vw; overflow: hidden; background: #fff; }
+        .specialty-layout { display: flex; flex: 1 1 auto; min-height: 0; width: 100vw; overflow: hidden; background: #fff; position: relative; }
         .pane { transition: flex-basis 0.2s ease; overflow-y: auto; display: flex; flex-direction: column; }
         .pane.dragging { transition: none; user-select: none; } 
 
@@ -56,7 +59,7 @@
         .sb-leaf { width: 100%; border: 0; text-align: left; background: transparent; cursor: pointer; color: #555; text-decoration: none; display: block; padding: 6px 15px 6px 30px; font-size: 13.5px; border-bottom: 1px solid #f5f5f5;}
         .sb-leaf:hover { color: #006e82; background-color: #f9f9f9; }
 
-        #pane-middle { flex-basis: 55%; flex-grow: 1; padding: 0; position: relative;}
+        #pane-middle { flex-basis: 55%; flex-grow: 1; min-width: 0; padding: 0; position: relative;}
         .middle-top-controls { display: flex; justify-content: space-between; align-items: center; padding: 8px 15px; background: #f8f9fa; border-bottom: 1px solid #eaeaea; position: sticky; top: 0; z-index: 10; }
         .btn-restore { background: none; border: 1px solid #006e82; color: #006e82; font-size: 12px; padding: 4px 10px; border-radius: 12px; cursor: pointer; font-weight: bold; display: none;}
         .btn-restore:hover { background: #006e82; color: #fff; }
@@ -70,18 +73,84 @@
         .topic-uid { font-size: 11px; color: #aaa; font-family: monospace; letter-spacing: 1px; vertical-align: super; margin-left: 8px; border: 1px solid #eee; padding: 2px 6px; border-radius: 4px; background: #fdfdfd;}
         
         .topic-editors { font-size: 13px; color: #555; }
+        .topic-trust-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; padding: 9px 11px; border-left: 4px solid #006e82; background: #f6fafb; color: #36454f; font-size: 13px; }
+        .topic-trust-badge { display: inline-block; padding: 4px 9px; border-radius: 999px; background: #dfecef; color: #174b5b; font-weight: bold; }
+        .topic-trust-header[data-content-status="stale"] { border-left-color: #a45a00; background: #fff8ec; }
+        .topic-trust-header[data-content-status="insufficient_evidence"], .topic-trust-header[data-content-status="failed"] { border-left-color: #a33; background: #fff2f2; }
         .topic-tabs { display: flex; gap: 20px; border-bottom: 1px solid #ddd; margin-top: 20px; }
         .topic-tabs button { padding: 10px 0; font-weight: bold; color: #666; cursor: pointer; border: 0; border-bottom: 3px solid transparent; background: transparent;}
         .topic-tabs button.active { color: #333; border-bottom-color: #f39c12; }
+        .topic-tabs button:focus-visible { outline: 2px solid #006e82; outline-offset: 4px; }
+        .topic-tab-panel[hidden], .btn-topic-top[hidden] { display: none; }
+        .topic-updates-summary { max-width: 720px; padding: 18px 20px; border-left: 4px solid #006e82; background: #f6fafb; }
+        .topic-update-state { color: #36454f; line-height: 1.6; }
+        .topic-update-time { color: #666; font-size: 13px; }
+        .btn-topic-top { position: sticky; bottom: 18px; margin: 0 18px 18px auto; min-width: 46px; min-height: 40px; border: 1px solid #006e82; border-radius: 20px; background: #fff; color: #006e82; box-shadow: 0 2px 8px rgba(0,0,0,0.16); cursor: pointer; font-weight: bold; }
+        .btn-topic-top:hover, .btn-topic-top:focus-visible { background: #006e82; color: #fff; }
         
-        .mock-content h3 { color: #006e82; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 30px;}
-        .mock-content p { line-height: 1.6; color: #444; font-size: 15px; }
-
         #pane-right { flex-basis: 20%; min-width: 200px; background-color: #fafafa; }
         .assets-wrapper { padding: 20px; }
         .asset-card { background: #fff; border: 1px solid #ddd; padding: 10px; margin-bottom: 15px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
         .asset-card img { width: 100%; height: auto; display: block; }
         .asset-card p { font-size: 12px; color: #0056b3; margin: 8px 0 0 0; text-align: center; }
+
+        .topic-action-bar, .topic-find-bar, .topic-reading-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+        .topic-action-bar input, .topic-find-bar input { min-width: 210px; padding: 7px 9px; border: 1px solid #aaa; border-radius: 3px; }
+        .topic-action-bar button, .topic-find-bar button, .topic-reading-nav button, .topic-tool-button { border: 1px solid #6f8493; border-radius: 3px; background: #fff; color: #234; padding: 7px 10px; cursor: pointer; }
+        .topic-action-bar button[aria-pressed="true"] { background: #e8f3f6; border-color: #006e82; }
+        .topic-action-bar button:focus-visible, .topic-find-bar button:focus-visible, .topic-reading-nav button:focus-visible { outline: 2px solid #006e82; outline-offset: 2px; }
+        .topic-reading-nav { justify-content: space-between; border-top: 1px solid #ddd; padding-top: 10px; }
+        .topic-reading-nav button:disabled { cursor: not-allowed; opacity: .45; }
+        .topic-tool-results { position: relative; z-index: 4; max-height: 240px; overflow: auto; margin: 4px 0 0; padding: 0; list-style: none; border: 1px solid #ccd6dc; background: #fff; box-shadow: 0 3px 8px rgba(0,0,0,.14); }
+        .topic-tool-results[hidden], .topic-drawer[hidden] { display: none; }
+        .topic-tool-results a, .topic-tool-results button { display: block; width: 100%; border: 0; background: #fff; padding: 8px 10px; text-align: left; color: #075d75; cursor: pointer; }
+        .topic-tool-results a:hover, .topic-tool-results button:hover { background: #eef6f8; }
+        .topic-status-counts { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+        .topic-status-pill, .recommendation-grade { display: inline-block; padding: 3px 7px; border-radius: 999px; background: #e9eff2; font-size: 12px; margin-right: 5px; }
+        .topic-update-list, .reference-list, .related-topic-list { padding-left: 20px; }
+        .topic-update-list button, .related-topic-list button { border: 0; background: transparent; color: #075d75; text-align: left; cursor: pointer; }
+        .topic-citations, .topic-citations li, .topic-reading-nav button { overflow-wrap: anywhere; word-break: break-word; }
+        .source-detail-list li { margin-bottom: 12px; overflow-wrap: anywhere; }
+        .source-detail-id { color: #526570; font-family: monospace; margin: 3px 0; }
+        .source-detail-field { color: #465b66; font-size: 12px; line-height: 1.45; }
+        .topic-drawer { border-left: 4px solid #006e82; background: #f6fafb; padding: 12px; margin-top: 12px; }
+        .topic-inline-status { min-height: 1.2em; color: #526570; font-size: 12px; }
+        #topic-citation-dialog { max-width: 560px; border: 1px solid #788d99; border-radius: 5px; }
+        #topic-citation-dialog::backdrop { background: rgba(0,0,0,.35); }
+
+        /* 手機/窄視窗以 overlay 保留完整目錄，同時讓正文永遠取得 100% 可用寬度。 */
+        @media (max-width: 900px) {
+            .top-bar { flex-wrap: wrap; gap: 8px; padding: 10px 12px; }
+            .top-bar-left, .top-bar-right { flex: 1 1 100%; justify-content: space-between; min-width: 0; }
+            .top-bar-right { justify-content: flex-end; }
+            .brand-name { font-size: 16px !important; margin-right: 8px !important; }
+            .top-link { margin-left: 8px; }
+            .global-nav-bar { overflow-x: auto; padding: 0 12px; }
+            .global-nav-bar ul { min-width: max-content; gap: 18px; }
+            .resizer-bar { display: none; }
+            #pane-middle { flex: 1 1 100%; width: 100%; min-width: 0; }
+            #pane-left:not(.pane-hidden), #pane-right:not(.pane-hidden) {
+                position: absolute;
+                top: 0;
+                bottom: 0;
+                z-index: 30;
+                width: min(86vw, 320px);
+                min-width: 0;
+                flex-basis: auto !important;
+                box-shadow: 0 4px 18px rgba(0,0,0,.24);
+            }
+            #pane-left:not(.pane-hidden) { left: 0; }
+            #pane-right:not(.pane-hidden) { right: 0; }
+            .topic-content-wrapper { padding: 16px; }
+            .topic-title { font-size: 27px; }
+            .topic-action-bar input, .topic-find-bar input { min-width: min(210px, 100%); }
+        }
+
+        @media print {
+            .top-bar, .global-nav-bar, #pane-left, #pane-right, .resizer-bar, .middle-top-controls,
+            .topic-action-bar, .topic-find-bar, .topic-reading-nav, .topic-tabs, .btn-topic-top { display: none !important; }
+            #pane-middle { overflow: visible; flex-basis: 100% !important; }
+        }
 
         .pane-hidden { display: none !important; }
     </style>
@@ -93,11 +162,11 @@
     <nav class="global-nav-bar">
         <ul>
             <li><a href="/" class="active">Specialties</a></li>
-            <li><a href="#">Latest Publishments</a></li>
-            <li><a href="#">Drug Library</a></li>
-            <li><a href="#">Chemo Regimens</a></li>
-            <li><a href="#">RootMed-Evaluators</a></li>
-            <li><a href="#" style="color: #f1c40f;">Clinic Case (SOAP/PICO/EHR)</a></li>
+            <li><span class="global-nav-disabled" aria-disabled="true">Latest Publications</span></li>
+            <li><span class="global-nav-disabled" aria-disabled="true">Drug Library</span></li>
+            <li><span class="global-nav-disabled" aria-disabled="true">Chemo Regimens</span></li>
+            <li><span class="global-nav-disabled" aria-disabled="true">RootMed-Evaluators</span></li>
+            <li><span class="global-nav-disabled" aria-disabled="true">Clinic Case (SOAP/PICO/EHR)</span></li>
         </ul>
     </nav>
 
@@ -126,17 +195,57 @@
 
             <div class="topic-content-wrapper">
                 <div class="topic-header">
-                    <div class="topic-meta">CONDITION • Updated May 2026</div>
-                    <h1 class="topic-title">{{ topic_name }} <span class="topic-uid" title="Global Specialty Hierarchical UID">{{ topic_uid }}</span></h1>
-                    <div class="topic-editors">Editors: Nancie MacIver MD, PhD; Scott A. Barron MD...</div>
-                    <div class="topic-tabs" role="tablist" aria-label="Topic views"><button type="button" class="active" role="tab" aria-selected="true">Topic</button><button type="button" role="tab" aria-selected="false">Updates</button><button type="button" role="tab" aria-selected="false">Images</button><button type="button" role="tab" aria-selected="false">Tables</button></div>
+                    <div class="topic-meta">EVIDENCE TOPIC • Dynamic content</div>
+                    <h1 class="topic-title">{{ topic_display_name }}</h1>
+                    <div class="topic-editors">Generated sections require citations from the local evidence index.</div>
+                    <section id="topic-trust-header" class="topic-trust-header" aria-live="polite" data-content-status="empty" data-workflow-status="" data-visibility="draft_preview">
+                        <span id="topic-trust-badge" class="topic-trust-badge">Select a section</span>
+                        <span>Version, update time, reviewer and demo status appear here.</span>
+                    </section>
+                    <div class="topic-action-bar" aria-label="Topic actions">
+                        <label for="topic-global-search">Global search</label>
+                        <input id="topic-global-search" type="search" autocomplete="off" placeholder="Search topics and headings">
+                        <button type="button" id="btn-topic-follow" aria-pressed="false">Follow</button>
+                        <button type="button" id="btn-topic-alerts">Alerts <span id="topic-alert-count">0</span></button>
+                        <button type="button" id="btn-topic-patient">Patient Information</button>
+                        <button type="button" id="btn-topic-print">Print</button>
+                        <button type="button" id="btn-topic-cite">Cite</button>
+                        <button type="button" id="btn-topic-share">Share</button>
+                    </div>
+                    <ul id="topic-global-search-results" class="topic-tool-results" aria-label="Global search results" hidden></ul>
+                    <div id="topic-action-status" class="topic-inline-status" role="status" aria-live="polite"></div>
+                    <div class="topic-find-bar" role="search">
+                        <label for="topic-find-input">Find in Topic</label>
+                        <input id="topic-find-input" type="search" autocomplete="off" placeholder="Find a section">
+                        <span id="topic-find-count" aria-live="polite">0 matches</span>
+                        <button type="button" id="btn-topic-find-prev" aria-label="Previous match">Previous</button>
+                        <button type="button" id="btn-topic-find-next" aria-label="Next match">Next</button>
+                    </div>
+                    <ul id="topic-find-results" class="topic-tool-results" aria-label="Find in Topic results" hidden></ul>
+                    <div class="topic-tabs" role="tablist" aria-label="Topic views">
+                        <button type="button" id="topic-tab" class="active" role="tab" aria-selected="true" aria-controls="topic-panel" tabindex="0">Topic</button>
+                        <button type="button" id="updates-tab" role="tab" aria-selected="false" aria-controls="updates-panel" tabindex="-1">Updates</button>
+                    </div>
                 </div>
 
-                <article id="main-reading-content" data-active-slot-id="" aria-live="polite" aria-busy="false">
-                    <h3>Waiting for selection</h3>
-                    <p>Select a topic from the sidebar to view detailed information.</p>
-                </article>
+                <section id="topic-panel" class="topic-tab-panel" role="tabpanel" aria-labelledby="topic-tab" tabindex="0">
+                    <article id="main-reading-content" data-active-slot-id="" aria-live="polite" aria-busy="false">
+                        <h3>Waiting for selection</h3>
+                        <p>Select a topic from the sidebar to view detailed information.</p>
+                    </article>
+                </section>
+                <section id="updates-panel" class="topic-tab-panel" role="tabpanel" aria-labelledby="updates-tab" tabindex="0" hidden>
+                    <div id="topic-updates-content" class="topic-updates-summary" aria-live="polite">
+                        <h3>No section selected</h3>
+                        <p>Select a section to view its stored update status.</p>
+                    </div>
+                </section>
+                <nav class="topic-reading-nav" aria-label="Section navigation">
+                    <button type="button" id="btn-topic-previous" disabled>← Previous</button>
+                    <button type="button" id="btn-topic-next" disabled>Next →</button>
+                </nav>
             </div>
+            <button type="button" id="btn-topic-back-to-top" class="btn-topic-top" aria-label="Back to topic top" hidden>↑ Top</button>
         </main>
 
         <div class="resizer-bar" id="resizer-right"></div>
@@ -146,22 +255,26 @@
                 <button class="btn-close-pane" id="btn-close-right" title="Hide Resources">[-]</button>
             </div>
             <div class="assets-wrapper">
-                <h4 style="margin-top: 0; color: #555; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Images</h4>
-                <div class="asset-card">
-                    <div style="background:#eee; height:100px; display:flex; align-items:center; justify-content:center; color:#aaa;">[Graphic Placeholder]</div>
-                    <p>Stages of condition</p>
-                </div>
-                <h4 style="margin-top: 20px; color: #555; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Tables</h4>
-                <div class="asset-card">
-                    <div style="background:#eee; height:60px; display:flex; align-items:center; justify-content:center; color:#aaa;">[Table Placeholder]</div>
-                    <p>Comparison Table</p>
-                </div>
+                <h4 style="margin-top: 0; color: #555; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Related Topics</h4>
+                <div id="related-topics-content"><p>Select a section to view related sections.</p></div>
+                <button type="button" id="btn-topic-references" class="topic-tool-button" aria-expanded="false" aria-controls="topic-references-drawer">References</button>
+                <section id="topic-references-drawer" class="topic-drawer" aria-label="References" hidden>
+                    <h4>References</h4>
+                    <div id="topic-reference-content"><p>No section selected.</p></div>
+                </section>
             </div>
         </aside>
     </div>
 
-    <script src="/static/js/app.js"></script>
-    <script src="/static/js/topic_content.js"></script>
+    <dialog id="topic-citation-dialog" aria-labelledby="topic-citation-title">
+        <h3 id="topic-citation-title">Cite this topic</h3>
+        <p id="topic-citation-text"></p>
+        <button type="button" id="btn-topic-citation-copy">Copy citation</button>
+        <button type="button" id="btn-topic-citation-close">Close</button>
+    </dialog>
+
+    <script src="/static/js/app.js?v=20260717-about-1"></script>
+    <script src="/static/js/topic_content.js?v=20260718-closure1"></script>
 
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
@@ -180,18 +293,46 @@
             const btnRestoreRight = document.getElementById('btn-restore-right');
             const btnFullscreen = document.getElementById('btn-fullscreen');
 
-            let isLeftHidden = false; let isRightHidden = false;
+            window.TopicContent.initNavigation(document);
+
+            const narrowLayout = window.matchMedia('(max-width: 900px)');
+            let isLeftHidden = narrowLayout.matches; let isRightHidden = narrowLayout.matches;
+            let collapsedByResponsiveLayout = narrowLayout.matches;
+
+            function applyPaneVisibility() {
+                paneLeft.classList.toggle('pane-hidden', isLeftHidden);
+                resizerLeft.classList.toggle('pane-hidden', isLeftHidden);
+                btnRestoreLeft.style.display = isLeftHidden ? 'inline-block' : 'none';
+                paneRight.classList.toggle('pane-hidden', isRightHidden);
+                resizerRight.classList.toggle('pane-hidden', isRightHidden);
+                btnRestoreRight.style.display = isRightHidden ? 'inline-block' : 'none';
+            }
+
+            // ponytail: 900px 以下只自動收合一次；若未來需要持久化，改由 user-state API 記錄 pane 狀態。
+            function syncResponsivePanes(event) {
+                if (event.matches) {
+                    isLeftHidden = true;
+                    isRightHidden = true;
+                    collapsedByResponsiveLayout = true;
+                } else if (collapsedByResponsiveLayout) {
+                    isLeftHidden = false;
+                    isRightHidden = false;
+                    collapsedByResponsiveLayout = false;
+                }
+                applyPaneVisibility();
+            }
+
+            applyPaneVisibility();
+            narrowLayout.addEventListener('change', syncResponsivePanes);
 
             function toggleLeftPane() {
                 isLeftHidden = !isLeftHidden;
-                if (isLeftHidden) { paneLeft.classList.add('pane-hidden'); resizerLeft.classList.add('pane-hidden'); btnRestoreLeft.style.display = 'inline-block'; } 
-                else { paneLeft.classList.remove('pane-hidden'); resizerLeft.classList.remove('pane-hidden'); btnRestoreLeft.style.display = 'none'; }
+                applyPaneVisibility();
             }
 
             function toggleRightPane() {
                 isRightHidden = !isRightHidden;
-                if (isRightHidden) { paneRight.classList.add('pane-hidden'); resizerRight.classList.add('pane-hidden'); btnRestoreRight.style.display = 'inline-block'; } 
-                else { paneRight.classList.remove('pane-hidden'); resizerRight.classList.remove('pane-hidden'); btnRestoreRight.style.display = 'none'; }
+                applyPaneVisibility();
             }
 
             btnCloseLeft.addEventListener('click', toggleLeftPane);
@@ -253,6 +394,7 @@
                         
                         renderSidebar(json.tree.custom, container);
                     }
+                    window.TopicContent.initTopicTools(document, json.tree);
                 }
             } catch (err) {
                 const failure = document.createElement('div');
@@ -328,6 +470,7 @@
                 element.dataset.slotId = node.slot_id;
                 element.dataset.slotLevel = String(node.layer);
                 element.dataset.contentStatus = node.content_status || 'empty';
+                element.dataset.allowedBlocks = JSON.stringify(node.allowed_blocks || []);
             }
 
             document.getElementById('btn-expand-all').addEventListener('click', () => {

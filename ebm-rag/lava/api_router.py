@@ -1,8 +1,10 @@
-# 檔案路徑: rootmedicals-a/ebm-rag/lava/api_router.py
-# 產生時間: 2026-06-17 16:10 +08:00
-# 版本: v0.1-交付整理
-# 說明: RAG 內部 LAVA LLM 控制層，負責 provider、任務綁定與任務執行。
-# 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+# 模組定位: LAVA connection/binding/readiness/task invocation 的 FastAPI router。
+# 主要責任: 管理 verified connections，僅分派 registry allowlisted executors，回報分層 readiness。
+# 呼叫來源: main_rag.py、LAVA setup UI、Topic orchestrator 與 internal clients。
+# 輸入契約: lava/schemas.py 驗證後的 request；task id 必須存在 registry。
+# 輸出契約: 不含 API key 的 JSON；global 與 optional Topic readiness 分開呈現。
+# 安全邊界: capability 未 verify/不匹配不可 binding；executor 不接受任意 module path。
+# 維護提醒: 新 optional task 不得改變既有 global ready 語意，並需補 route/readiness contract test。
 # ----------------------------------------------------------------------------------------------------
 
 # File Path: ebm-rag/lava/api_router.py

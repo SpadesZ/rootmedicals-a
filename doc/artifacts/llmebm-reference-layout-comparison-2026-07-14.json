@@ -1,0 +1,97 @@
+{
+  "schema": "llmebm-reference-layout-comparison.v1",
+  "approval_required": true,
+  "production_mutation": false,
+  "slot_identity_policy": "preserve_existing_ids",
+  "capture_evidence": {
+    "current_screenshot_sha256": "7c1d4d2d38cd01766097e48bd5abf3dc6a0569dc4db72a1e8b8689b60ab79e0c",
+    "reference_screenshot_sha256": "357b3cdcd09d2c1adc59f037dfba24e0364ffc596d198feed30f109d8473c195"
+  },
+  "capability_decisions": [
+    {
+      "capability": "semantic_article",
+      "current": true,
+      "reference": false,
+      "decision": "retain_current"
+    },
+    {
+      "capability": "complementary_regions",
+      "current": true,
+      "reference": false,
+      "decision": "retain_current"
+    },
+    {
+      "capability": "live_content_status",
+      "current": true,
+      "reference": false,
+      "decision": "retain_current"
+    },
+    {
+      "capability": "topic_tabs",
+      "current": true,
+      "reference": true,
+      "decision": "retain_shared"
+    },
+    {
+      "capability": "interactive_topic_tabs",
+      "current": false,
+      "reference": true,
+      "decision": "consider"
+    },
+    {
+      "capability": "section_disclosure_state",
+      "current": true,
+      "reference": true,
+      "decision": "retain_shared"
+    },
+    {
+      "capability": "aria_control_relationships",
+      "current": true,
+      "reference": true,
+      "decision": "retain_shared"
+    },
+    {
+      "capability": "skip_navigation",
+      "current": true,
+      "reference": true,
+      "decision": "retain_shared"
+    },
+    {
+      "capability": "global_search",
+      "current": false,
+      "reference": true,
+      "decision": "consider"
+    },
+    {
+      "capability": "fixed_global_header",
+      "current": false,
+      "reference": true,
+      "decision": "consider"
+    },
+    {
+      "capability": "back_to_top",
+      "current": false,
+      "reference": true,
+      "decision": "consider"
+    },
+    {
+      "capability": "table_surface",
+      "current": false,
+      "reference": false,
+      "decision": "no_signal"
+    },
+    {
+      "capability": "current_markers",
+      "current": false,
+      "reference": false,
+      "decision": "no_signal"
+    }
+  ],
+  "excluded_data_policy": [
+    "content-and-identity",
+    "visual-identity",
+    "raw-page-material"
+  ],
+  "implementation_gate": "human-review-before-any-template-or-sql-change",
+  "comparison_hash": "sha256:0b39c3e43da1f611081e50560169944aea1c5e6b55d8b0030667a18df160b29c"
+}

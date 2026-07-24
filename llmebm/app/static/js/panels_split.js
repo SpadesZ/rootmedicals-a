@@ -2,7 +2,7 @@
  * 檔案路徑: rootmedicals-a/llmebm/app/static/js/panels_split.js
  * 產生時間: 2026-06-17 16:10 +08:00
  * 版本: v0.1-交付整理
- * 說明: llmebm 知識庫 UI 靜態資源。
+ * 說明: llmebm 分欄互動與 Medpilot 唯讀單輪 EBM 問答 UI。
  * 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
  * ----------------------------------------------------------------------------------------------------
  */
@@ -174,36 +174,129 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // ==========================================
-    // 區塊 3: [新增] 對話輸入 (Data Input) 送出邏輯
+    // 區塊 3: Medpilot 單輪 EBM 問答；所有動態文字使用 textContent，citation 只採後端驗證結果。
     // ==========================================
     const btnSendFloat = document.getElementById('btn-send-chat-float');
     const inputFloat = document.getElementById('llm-chat-input-float');
     const historyFloat = document.getElementById('chat-history-float');
 
     if (btnSendFloat && inputFloat && historyFloat) {
-        btnSendFloat.addEventListener('click', () => {
+        const scrollHistory = () => { historyFloat.scrollTop = historyFloat.scrollHeight; };
+
+        const appendMessage = (role, text, className = 'system-msg') => {
+            const message = document.createElement('div');
+            message.className = `chat-msg ${className}`;
+            const label = document.createElement('strong');
+            label.textContent = `${role}: `;
+            message.appendChild(label);
+            message.appendChild(document.createTextNode(text));
+            historyFloat.appendChild(message);
+            scrollHistory();
+            return message;
+        };
+
+        const appendEvidenceAnswer = (payload) => {
+            const message = document.createElement('div');
+            message.className = `chat-msg system-msg medpilot-${payload.kind || 'answer'}`;
+            const label = document.createElement('strong');
+            label.textContent = 'Medpilot: ';
+            message.appendChild(label);
+            message.appendChild(document.createTextNode(payload.answer || 'No answer was returned.'));
+
+            (payload.sections || []).forEach(section => {
+                const heading = document.createElement('h4');
+                heading.textContent = section.topic || 'Evidence summary';
+                const body = document.createElement('p');
+                body.textContent = section.text || '';
+                const meta = document.createElement('div');
+                meta.className = 'chat-meta';
+                const refs = (section.citation_indexes || []).map(index => `[${index}]`).join(' ');
+                meta.textContent = `${section.evidence_level || 'unknown'} · ${section.grade || 'unknown'} ${refs}`.trim();
+                message.append(heading, body, meta);
+            });
+
+            if ((payload.citations || []).length) {
+                const citationHeading = document.createElement('h4');
+                citationHeading.textContent = 'Sources';
+                const list = document.createElement('ol');
+                list.className = 'chat-citations';
+                payload.citations.forEach(citation => {
+                    const item = document.createElement('li');
+                    const identifiers = [
+                        citation.paper_id,
+                        citation.chunk_id,
+                        citation.doi ? `DOI ${citation.doi}` : '',
+                        citation.pmid ? `PMID ${citation.pmid}` : '',
+                    ].filter(Boolean).join(' · ');
+                    item.textContent = `${citation.title || citation.paper_id} — ${identifiers}`;
+                    list.appendChild(item);
+                });
+                message.append(citationHeading, list);
+            }
+
+            if (payload.query_id) {
+                const queryMeta = document.createElement('div');
+                queryMeta.className = 'chat-meta';
+                queryMeta.textContent = `Retrieval ID: ${payload.query_id}`;
+                message.appendChild(queryMeta);
+            }
+            historyFloat.appendChild(message);
+            scrollHistory();
+        };
+
+        const appendRetryableError = (text, query) => {
+            const message = appendMessage('Medpilot', text, 'system-msg chat-error');
+            const retry = document.createElement('button');
+            retry.type = 'button';
+            retry.className = 'chat-retry';
+            retry.textContent = 'Retry';
+            retry.addEventListener('click', () => {
+                inputFloat.value = query;
+                submitQuery();
+            });
+            message.appendChild(retry);
+        };
+
+        const submitQuery = async () => {
             const text = inputFloat.value.trim();
-            if (!text) return;
+            if (!text || btnSendFloat.disabled) return;
 
-            // 1. 渲染使用者發送的訊息 (User Message)
-            const userDiv = document.createElement('div');
-            userDiv.className = 'chat-msg user-msg';
-            userDiv.innerHTML = `<strong>You:</strong> ${text}`;
-            historyFloat.appendChild(userDiv);
-            
-            // 清空輸入框並捲動到底部
+            appendMessage('You', text, 'user-msg');
             inputFloat.value = '';
-            historyFloat.scrollTop = historyFloat.scrollHeight;
+            btnSendFloat.disabled = true;
+            inputFloat.disabled = true;
+            const pending = appendMessage('Medpilot', 'Retrieving and verifying local evidence…', 'system-msg chat-pending');
+            const controller = new AbortController();
+            const timeoutId = window.setTimeout(() => controller.abort(), 125000);
 
-            // 2. 模擬 AI 處理延遲與系統回覆 (System Message)
-            setTimeout(() => {
-                const sysDiv = document.createElement('div');
-                sysDiv.className = 'chat-msg system-msg';
-                sysDiv.innerHTML = `<strong>System:</strong> I have received your query regarding "${text.substring(0, 15)}...". Parsing current clinical guidelines from the EBM database...`;
-                historyFloat.appendChild(sysDiv);
-                historyFloat.scrollTop = historyFloat.scrollHeight;
-            }, 800); // 模擬 0.8 秒延遲
-        });
+            try {
+                const response = await fetch('/api/v1/medpilot/query', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                    body: JSON.stringify({query: text}),
+                    signal: controller.signal,
+                });
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
+                pending.remove();
+                appendEvidenceAnswer(payload);
+            } catch (error) {
+                pending.remove();
+                const unavailable = !navigator.onLine
+                    ? 'The browser is offline. Reconnect before retrying.'
+                    : error.name === 'AbortError'
+                        ? 'The evidence query timed out. Please retry.'
+                        : 'Evidence retrieval is temporarily unavailable. Please retry.';
+                appendRetryableError(unavailable, text);
+            } finally {
+                window.clearTimeout(timeoutId);
+                btnSendFloat.disabled = false;
+                inputFloat.disabled = false;
+                inputFloat.focus();
+            }
+        };
+
+        btnSendFloat.addEventListener('click', submitQuery);
 
         // 支援 Enter 鍵快速送出 (Shift+Enter 換行)
         inputFloat.addEventListener('keydown', (e) => {

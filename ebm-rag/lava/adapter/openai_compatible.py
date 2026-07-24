@@ -1,8 +1,10 @@
-# 檔案路徑: rootmedicals-a/ebm-rag/lava/adapter/openai_compatible.py
-# 產生時間: 2026-06-17 16:10 +08:00
-# 版本: v0.1-交付整理
-# 說明: RAG 內部 LAVA LLM 控制層，負責 provider、任務綁定與任務執行。
-# 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+# 模組定位: OpenAI-compatible providers 的 LAVA chat/vision/embedding adapter。
+# 主要責任: 建立標準相容 payload、解析 response 並執行 shared retry/error sanitization。
+# 呼叫來源: LAVA verification、Topic planner/composer 與既有 RAG tasks。
+# 輸入契約: provider base URL、model id、secret bearer token、messages 與 bounded images。
+# 輸出契約: provider-neutral chat/embed result，生成結果保留 finish_reason，或 sanitized error。
+# 安全邊界: Authorization value 不得回傳/記錄；影像必須先通過 BaseLavaAdapter bounds。
+# 維護提醒: provider 方言若偏離相容 API，應在該 provider 分支處理，不放寬全域 schema gate。
 # ----------------------------------------------------------------------------------------------------
 
 # File Path: ebm-rag/lava/adapter/openai_compatible.py
@@ -56,8 +58,14 @@ class OpenAICompatibleAdapter(BaseLavaAdapter):
                     return response
                 r = await self.request_with_retries(do_request, attempts=3)
                 data = r.json()
-                content = data["choices"][0]["message"]["content"]
-                return {"content": content, "model": model_id, "provider": self.provider}
+                choice = data["choices"][0]
+                content = choice["message"]["content"]
+                return {
+                    "content": content,
+                    "model": model_id,
+                    "provider": self.provider,
+                    "finish_reason": choice.get("finish_reason"),
+                }
         except Exception as e:
             raise RuntimeError(self.safe_error(e, api_key)) from None
 

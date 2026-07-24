@@ -101,14 +101,15 @@
     "fixture_id": "allergic_rhinitis_intranasal_steroid"
   },
   "network": {
-    "endpoint_url": "https://34.80.145.165.sslip.io/api/intake",
+    "endpoint_url": "https://35.201.225.188.sslip.io/api/intake",
     "send_enabled": true,
     "timeout_seconds": 120.0,
     "allow_insecure_localhost_http": true,
     "application_aes_gcm": {
       "enabled": false,
       "key_env_var": "LLMXX_CLIENT_AES256_KEY_B64"
-    }
+    },
+    "verify_tls": true
   },
   "doctor_alert": {
     "enabled": true,

@@ -1,9 +1,11 @@
 <!--
-  檔案路徑: rootmedicals-a/llmebm/app/templates/admin.html
-  產生時間: 2026-06-17 16:10 +08:00
-  版本: v0.1-交付整理
-  說明: llmebm 知識庫 UI 模板。
-  交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+  模組定位: llmebm 系統、taxonomy、sidebar 與 medical review 的受控 Admin 工作台。
+  主要責任: 提供知識樹管理、逐-slot mapping 核准/重生及 current draft 的審核、來源 gate、稽核與發布介面。
+  呼叫來源: main_ebm.py 的 /admin route 與受權 Admin/Reviewer 使用者。
+  輸入契約: 人工輸入 topic、actor、comment 與本機開發瀏覽器保存的 review token。
+  輸出契約: 只透過受權 API generate/preview/submit/decision/publish/rollback，不直接改 SQLite。
+  安全邊界: review token 僅寫本機 localStorage；生成 token 不進瀏覽器，clinical body 只用安全 DOM text renderer 顯示。
+  維護提醒: 正式登入/RBAC 上線後移除手動 token UX，但保留 server-side workflow/source gates。
   ----------------------------------------------------------------------------------------------------
 -->
 
@@ -13,8 +15,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EBMDx - Admin Panel</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-    <link rel="stylesheet" href="/static/css/admin.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260717-about-1">
+    <link rel="stylesheet" href="/static/css/admin.css?v=20260717-scope-approval-1">
 </head>
 <body>
     {% include '_header.html' %}
@@ -23,6 +25,7 @@
             <button class="tab-btn active" data-tab="tab-system">System Settings</button>
             <button class="tab-btn" data-tab="tab-taxonomy">Taxonomy Builder</button>
             <button class="tab-btn" data-tab="tab-sidebar-builder">Sidebar Topic Builder</button>
+            <button class="tab-btn" data-tab="tab-medical-review">Medical Review</button>
         </div>
 
         <div id="tab-system" class="tab-content active">
@@ -143,8 +146,149 @@
                 </div>
             </div>
         </div>
+
+        <div id="tab-medical-review" class="tab-content" data-dev-review-session="{{ 'true' if dev_review_session else 'false' }}">
+            <h2 class="admin-title">Medical Review &amp; Publication</h2>
+            <p class="review-safety-note">
+                {% if dev_review_session %}
+                Local development review session is active through a scoped HttpOnly cookie. The token is not exposed to JavaScript.
+                {% else %}
+                Review token is remembered on this local development browser. Publishing stays blocked until the cited sources pass the commercial-use gate.
+                {% endif %}
+            </p>
+            <div class="review-toolbar" aria-label="Medical review controls">
+                <label>
+                    Review token
+                    <input id="review-token-input" type="password" autocomplete="off" spellcheck="false"
+                           {% if dev_review_session %}disabled placeholder="Development session active"{% endif %}>
+                </label>
+                <label>
+                    Topic slug
+                    <input id="review-topic-input" type="text" value="atrial-fibrillation" autocomplete="off">
+                </label>
+                <label>
+                    Reviewer identity
+                    <input id="review-actor-input" type="text" maxlength="120" autocomplete="off">
+                </label>
+                <label>
+                    Workflow status
+                    <select id="review-status-filter">
+                        <option value="all">All current ready</option>
+                        <option value="review_pending">Review pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="generated">Generated</option>
+                        <option value="rejected">Rejected</option>
+                        <option value="published">Published</option>
+                    </select>
+                </label>
+                <button id="review-load-queue" type="button" class="btn-primary">Load review queue</button>
+            </div>
+            <div id="review-status" class="review-status" role="status" aria-live="polite">
+                {% if dev_review_session %}Development review session active. Load a topic.{% else %}Enter the review token and load a topic.{% endif %}
+            </div>
+
+            <section class="review-generation-panel" aria-labelledby="review-generation-title">
+                <div class="review-generation-copy">
+                    <h3 id="review-generation-title">Single-section regeneration</h3>
+                    <p>
+                        Start one empty, stale, or failed section at a time. Current source-to-slot mapping approval is required;
+                        ready content cannot be force-regenerated from this browser control.
+                    </p>
+                </div>
+                <div class="review-generation-controls">
+                    <label for="review-generation-slot">
+                        Section requiring generation
+                        <select id="review-generation-slot" disabled>
+                            <option value="">Load a topic first</option>
+                        </select>
+                    </label>
+                    <button id="review-generate" type="button" class="btn-primary" disabled>Regenerate selected section</button>
+                    <button id="review-generation-refresh" type="button" disabled>Refresh job status</button>
+                </div>
+                <div class="review-generation-approval">
+                    <label for="review-generation-reason">
+                        Mapping review reason
+                        <input id="review-generation-reason" type="text" maxlength="2000"
+                               placeholder="Explain why the current sources match this section.">
+                    </label>
+                    <button id="review-approve-mapping" type="button" disabled>Approve current mapping</button>
+                </div>
+                <p id="review-generation-eligibility" class="review-content-meta">
+                    Load a topic to inspect generation eligibility.
+                </p>
+                <div id="review-generation-job" class="review-generation-job" role="status" aria-live="polite">
+                    No generation job loaded.
+                </div>
+                <div id="review-automation-queue" class="review-generation-job" role="status" aria-live="polite">
+                    No automatic scan/regeneration queue loaded.
+                </div>
+            </section>
+
+            <div class="review-workspace">
+                <section class="review-queue-panel" aria-labelledby="review-queue-title">
+                    <h4>Evidence mapping approvals</h4>
+                    <div id="review-scope-summary" class="review-scope-summary">
+                        Load a topic to verify reviewed source-to-slot mappings.
+                    </div>
+                    <div class="review-panel-header">
+                        <h3 id="review-queue-title">Current-ready queue</h3>
+                        <span id="review-queue-count" class="review-count">0</span>
+                    </div>
+                    <div id="review-queue" class="review-queue" aria-label="Review queue items"></div>
+                </section>
+
+                <section class="review-detail-panel" aria-labelledby="review-detail-title">
+                    <div class="review-panel-header">
+                        <h3 id="review-detail-title">Select a slot</h3>
+                        <span id="review-workflow-badge" class="review-badge">No selection</span>
+                    </div>
+                    <div class="review-comparison">
+                        <section aria-labelledby="review-draft-title">
+                            <h4 id="review-draft-title">Current draft</h4>
+                            <div id="review-draft" class="review-content-surface"></div>
+                        </section>
+                        <section aria-labelledby="review-published-title">
+                            <h4 id="review-published-title">Published comparison</h4>
+                            <div id="review-published" class="review-content-surface"></div>
+                        </section>
+                    </div>
+
+                    <div class="review-meta-grid">
+                        <section aria-labelledby="review-scope-title">
+                            <h4 id="review-scope-title">Evidence mapping review</h4>
+                            <div id="review-scope-review" class="review-meta-surface"></div>
+                        </section>
+                        <section aria-labelledby="review-source-title">
+                            <h4 id="review-source-title">Commercial source gate</h4>
+                            <div id="review-source-gate" class="review-meta-surface"></div>
+                        </section>
+                        <section aria-labelledby="review-history-title">
+                            <h4 id="review-history-title">Audit history</h4>
+                            <div id="review-history" class="review-meta-surface"></div>
+                        </section>
+                    </div>
+
+                    <div class="review-actions" aria-label="Review workflow actions">
+                        <label for="review-comment">Required review note</label>
+                        <textarea id="review-comment" maxlength="2000" rows="3" placeholder="Record the clinical review decision or reason."></textarea>
+                        <label for="review-rollback-target">Prior published version</label>
+                        <select id="review-rollback-target" disabled>
+                            <option value="">No prior published version</option>
+                        </select>
+                        <div class="review-action-buttons">
+                            <button id="review-submit" type="button" disabled>Submit for review</button>
+                            <button id="review-approve" type="button" disabled>Approve</button>
+                            <button id="review-reject" type="button" disabled>Reject</button>
+                            <button id="review-publish" type="button" disabled>Publish</button>
+                            <button id="review-rollback" type="button" disabled>Rollback publication</button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
     </div>
 
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v=20260717-about-1"></script>
+    <script src="/static/js/admin_review.js?v=20260717-dev-review-session-1"></script>
 </body>
 </html>

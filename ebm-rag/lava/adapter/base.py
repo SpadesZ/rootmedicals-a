@@ -1,8 +1,10 @@
-# 檔案路徑: rootmedicals-a/ebm-rag/lava/adapter/base.py
-# 產生時間: 2026-06-17 16:10 +08:00
-# 版本: v0.1-交付整理
-# 說明: RAG 內部 LAVA LLM 控制層，負責 provider、任務綁定與任務執行。
-# 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+# 模組定位: LAVA provider adapters 的 capability 與 transport 基底。
+# 主要責任: 定義 chat/embed/vision 契約、retry 規則、影像 bounds 與錯誤清洗。
+# 呼叫來源: provider-specific adapters、LAVA task executors 與 contract tests。
+# 輸入契約: verified connection、bounded prompt/messages 與最多 3 張 PNG/JPEG base64 影像。
+# 輸出契約: provider-neutral model/chat/embedding 結果或不含 secret 的可診斷錯誤。
+# 安全邊界: API key 不得進入 error；影像 MIME、base64 與 5 MiB 上限必須先驗證。
+# 維護提醒: 新 provider 必須明確宣告 capability，不能以 chat verify 冒充 vision/embed verify。
 # ----------------------------------------------------------------------------------------------------
 
 # File Path: ebm-rag/lava/adapter/base.py

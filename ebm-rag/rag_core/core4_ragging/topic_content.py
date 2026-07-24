@@ -1,7 +1,10 @@
-# File Path: ebm-rag/rag_core/core4_ragging/topic_content.py
-# Timestamp: 2026-07-11
-# Version: v0.1
-# Description: Topic plan -> existing retrieve() -> evidence-only composer orchestration.
+# 模組定位: ebm-rag 的 Topic content 三階段 orchestrator。
+# 主要責任: vision plan 後逐 slot 呼叫既有 retrieve，再以 evidence-only composer 產生 component JSON。
+# 呼叫來源: Core5 /api/v1/rag/topic-content/generate endpoint 與 contract tests。
+# 輸入契約: 已驗證 manifest、1 至 3 張截圖、可選 slot/filter/top_k。
+# 輸出契約: manifest-matched sections、planning_mode；失敗帶結構化 error，成功內容附 evidence digest。
+# 安全邊界: composer 只能引用 retrieval bundle 內 paper/chunk；錯誤截斷至 500 字元。
+# 維護提醒: schema-invalid composer fallback 要寫入 retrieval log；provider 真錯誤仍算 section failure。
 # ----------------------------------------------------------------------------------------------------
 
 import hashlib
@@ -15,6 +18,7 @@ from lava.matching_tasks.topic_content_compose import (
 )
 from lava.matching_tasks.topic_content_plan import execute_topic_content_plan, validate_topic_manifest
 from rag_core.common import state_db as sdb
+from rag_core.common.evidence_scope import canonical_topic_key, slot_key_from_id
 from rag_core.core4_ragging.retriever import retrieve
 
 
@@ -43,6 +47,8 @@ def _section_context(manifest: dict, section: dict) -> tuple[str, dict]:
         "dx": manifest["topic_name"],
         "normalized_diagnosis": manifest["topic_name"],
         "tx": "",
+        # Topic planner needs are already schema-bounded; pass them explicitly so Core4 does not collapse every slot to generic disease queries.
+        "retrieval_queries": list(section["evidence_needs"]),
     }
     return dx_summary, case_context
 
@@ -126,6 +132,9 @@ async def generate_topic_content(
         query_id = str(uuid.uuid4())
         dx_summary, case_context = _section_context(selected_manifest, section)
         section_filters = {**section.get("filters", {}), **request_filters}
+        # Topic content may relax taxonomy labels, but never its reviewed topic/slot evidence scope.
+        section_filters["topic_key"] = canonical_topic_key(selected_manifest["topic_name"])
+        section_filters["slot_key"] = slot_key_from_id(section["slot_id"])
         section_filters["query_decomposition_mode"] = "llm_assisted"
         try:
             retrieval = await retrieve(
@@ -141,18 +150,26 @@ async def generate_topic_content(
             })
             content = compose_result.get("content")
             section_status = compose_result.get("status") or "failed"
+            fallback_reason = compose_result.get("fallback_reason")
+            section_error = None
             if content is None:
-                errors.append({
+                section_error = {
                     "slot_id": section["slot_id"],
                     "stage": "compose",
                     "error": compose_result.get("error") or "topic compose failed",
-                })
+                }
+                errors.append(section_error)
             sections.append({
                 "slot_id": section["slot_id"],
                 "status": section_status,
                 "query_id": query_id,
                 "evidence_digest": _evidence_digest(bundle),
                 "content": content,
+                "fallback_reason": fallback_reason,
+                "error": {
+                    "stage": section_error["stage"],
+                    "error": section_error["error"],
+                } if section_error else None,
             })
             try:
                 await sdb.save_retrieval_log(
@@ -163,6 +180,7 @@ async def generate_topic_content(
                         "slot_id": section["slot_id"],
                         "evidence_needs": section["evidence_needs"],
                         "top_k": min(safe_top_k, section["top_k"]),
+                        "compose_fallback_reason": fallback_reason,
                     },
                     section_filters,
                     bundle["hits"],
@@ -176,18 +194,21 @@ async def generate_topic_content(
                 })
         except Exception as error:
             safe_error = str(error)[:500]
+            section_error = {"stage": "retrieval", "error": safe_error}
             sections.append({
                 "slot_id": section["slot_id"],
                 "status": "failed",
                 "query_id": query_id,
                 "content": None,
+                "error": section_error,
             })
-            errors.append({"slot_id": section["slot_id"], "stage": "retrieval", "error": safe_error})
+            errors.append({"slot_id": section["slot_id"], **section_error})
 
     return {
         "status": "ok" if not errors else ("partial" if any(item["content"] for item in sections) else "failed"),
         "manifest_hash": selected_manifest["dom_hash"],
         "plan": plan,
+        "planning_mode": plan_result.get("planning_mode", "single"),
         "sections": sections,
         "errors": errors,
     }

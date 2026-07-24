@@ -31,6 +31,12 @@ class ServerClient:
     def __init__(self, network_config: Dict[str, Any]):
         self.network_config = network_config
 
+    def _verify_tls(self) -> bool:
+        # 預設驗證 TLS 憑證（安全）。只有交付設定明確關閉時才略過，
+        # 用於 VM 走自簽憑證 / sslip.io 主機名與憑證不匹配的 demo 環境。
+        # 注意：關閉後 PHI 仍走 TLS 加密，但不驗證對端身分，正式環境應改用有效憑證。
+        return bool(self.network_config.get("verify_tls", True))
+
     def send(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         # send_enabled 讓 demo/診斷可以只截圖不送出；正式閉環要保持 true。
         if not self.network_config.get("send_enabled", False):
@@ -49,7 +55,7 @@ class ServerClient:
         # maybe_encrypt_payload 只包送出的 JSON，不改原始 payload；diagnostics 仍使用遮蔽副本。
         outbound = maybe_encrypt_payload(payload, self.network_config)
         timeout_seconds = float(self.network_config.get("timeout_seconds", 12.0) or 12.0)
-        with httpx.Client(timeout=timeout_seconds) as client:
+        with httpx.Client(timeout=timeout_seconds, verify=self._verify_tls()) as client:
             try:
                 response = client.post(endpoint, json=outbound)
                 response.raise_for_status()
@@ -90,7 +96,7 @@ class ServerClient:
         except Exception as exc:
             raise RuntimeError("httpx is required for server communication") from exc
         timeout_seconds = float(self.network_config.get("timeout_seconds", 12.0) or 12.0)
-        with httpx.Client(timeout=timeout_seconds) as client:
+        with httpx.Client(timeout=timeout_seconds, verify=self._verify_tls()) as client:
             response = client.get(url)
             response.raise_for_status()
             if response.content:

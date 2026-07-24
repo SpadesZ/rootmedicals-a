@@ -1,8 +1,10 @@
-# 檔案路徑: rootmedicals-a/ebm-rag/rag_core/core5_api/schemas.py
-# 產生時間: 2026-06-17 16:10 +08:00
-# 版本: v0.1-交付整理
-# 說明: RAG Core5 API 層，對外提供 health/check/admin 等服務端路由。
-# 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+# 模組定位: ebm-rag Core5 legacy 與 Topic API 的 Pydantic trust-boundary schemas。
+# 主要責任: 驗證 query/check、Topic manifest/screenshots、slot filters、scoped revision 與 mapping review 邊界。
+# 呼叫來源: rag_core/core5_api/router.py 的 public/internal endpoints。
+# 輸入契約: 未可信 JSON；Topic screenshot 必須是 PNG/JPEG base64 且數量/大小受限。
+# 輸出契約: 只產生 retrieval/orchestrator 可安全消費的 typed request models。
+# 安全邊界: unknown/oversized image 與非法 manifest 欄位在 provider 呼叫前拒絕。
+# 維護提醒: 保留 /query 與 /check 相容欄位；新增 Topic 欄位不可改壞 legacy callers。
 # ----------------------------------------------------------------------------------------------------
 
 # File Path: ebm-rag/rag_core/core5_api/schemas.py
@@ -24,6 +26,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional
 
 from lava.adapter.base import BaseLavaAdapter
+from rag_core.common.evidence_scope import canonical_topic_key, slot_key_from_id
+from rag_core.core1_ingestion.source_policy import ALLOWED_USES
 
 class QueryRequest(BaseModel):
     dx_summary: str
@@ -87,7 +91,6 @@ class TopicContentGenerateRequest(BaseModel):
         if len(encoded) > 1024 * 1024:
             raise ValueError("manifest exceeds 1 MiB")
         return value
-
     @field_validator("only_slot_ids")
     @classmethod
     def validate_only_slot_ids(cls, value: list[str]) -> list[str]:
@@ -125,3 +128,108 @@ class TopicContentGenerateRequest(BaseModel):
         if len(json.dumps(value, ensure_ascii=False)) > 20_000:
             raise ValueError("filters payload is too large")
         return value
+
+
+class TopicEvidenceRevisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    topic_key: str = Field(min_length=1, max_length=160)
+    slot_ids: list[str] = Field(min_length=1, max_length=200)
+
+    @field_validator("topic_key")
+    @classmethod
+    def validate_topic_key(cls, value: str) -> str:
+        normalized = canonical_topic_key(value)
+        if normalized == "*":
+            raise ValueError("topic_key must identify a specific topic")
+        return normalized
+
+    @field_validator("slot_ids")
+    @classmethod
+    def validate_slot_ids(cls, value: list[str]) -> list[str]:
+        normalized = [str(item or "").strip() for item in value]
+        if any(len(item) > 300 or slot_key_from_id(item) == "*" for item in normalized):
+            raise ValueError("slot_ids entries must be valid universal/custom slot IDs up to 300 characters")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("slot_ids contains duplicates")
+        return normalized
+
+
+class TopicScopeReviewStatusRequest(TopicEvidenceRevisionRequest):
+    """Bounded read-only lookup for append-only evidence mapping reviews."""
+
+
+class TopicScopeReviewApproveRequest(BaseModel):
+    """Approve one exact current source-to-slot mapping; source IDs are resolved server-side."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    topic_key: str = Field(min_length=1, max_length=160)
+    slot_id: str = Field(min_length=1, max_length=300)
+    reviewed_by: str = Field(min_length=1, max_length=120)
+    reason: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("topic_key")
+    @classmethod
+    def validate_topic_key(cls, value: str) -> str:
+        normalized = canonical_topic_key(value)
+        if normalized == "*":
+            raise ValueError("topic_key must identify a specific topic")
+        return normalized
+
+    @field_validator("slot_id")
+    @classmethod
+    def validate_slot_id(cls, value: str) -> str:
+        normalized = slot_key_from_id(value)
+        if normalized == "*":
+            raise ValueError("slot_id must identify one universal/custom slot")
+        return normalized
+
+    @field_validator("reviewed_by", "reason")
+    @classmethod
+    def strip_required_text(cls, value: str) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise ValueError("reviewed_by and reason must not be blank")
+        return normalized
+
+
+class SourceUseGateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    paper_ids: list[str] = Field(min_length=1, max_length=200)
+    required_use: str
+
+    @field_validator("paper_ids")
+    @classmethod
+    def validate_paper_ids(cls, value: list[str]) -> list[str]:
+        normalized = [str(item or "").strip() for item in value]
+        if any(not item or len(item) > 200 for item in normalized):
+            raise ValueError("paper_ids entries must be non-empty and at most 200 characters")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("paper_ids contains duplicates")
+        return normalized
+
+    @field_validator("required_use")
+    @classmethod
+    def validate_required_use(cls, value: str) -> str:
+        normalized = str(value or "").strip()
+        if normalized not in ALLOWED_USES:
+            raise ValueError("required_use is invalid")
+        return normalized
+
+
+class SourceDetailsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    paper_ids: list[str] = Field(min_length=1, max_length=50)
+
+    @field_validator("paper_ids")
+    @classmethod
+    def validate_paper_ids(cls, value: list[str]) -> list[str]:
+        normalized = [str(item or "").strip() for item in value]
+        if any(not item or len(item) > 200 for item in normalized):
+            raise ValueError("paper_ids entries must be non-empty and at most 200 characters")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("paper_ids contains duplicates")
+        return normalized

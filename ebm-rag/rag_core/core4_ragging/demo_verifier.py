@@ -149,7 +149,12 @@ def _source_chunk_text(chunks: list, chunk_ids: set[str]) -> str:
         chunk_id = str(chunk.get("chunk_id") or "")
         if chunk_id in chunk_ids:
             payload = chunk.get("payload") if isinstance(chunk.get("payload"), dict) else {}
-            texts.append(str(chunk.get("text") or payload.get("text") or ""))
+            # Source text often abbreviates the diagnosis (for example, AF),
+            # while the cited metadata retains the normalized disease name.
+            texts.append(" ".join([
+                str(_chunk_value(chunk, "disease") or ""),
+                str(chunk.get("text") or payload.get("text") or ""),
+            ]))
     return " ".join(texts)
 
 

@@ -1,8 +1,10 @@
-# 檔案路徑: rootmedicals-a/ebm-rag/rag_core/core4_ragging/retriever.py
-# 產生時間: 2026-06-17 16:10 +08:00
-# 版本: v0.1-交付整理
-# 說明: RAG Core4 查詢/驗證層，負責 retrieval、EBM 生成、ICD gate 與安全燈號。
-# 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+# 模組定位: ebm-rag Core4 hybrid retrieval 與 query-decomposition policy。
+# 主要責任: 建立 deterministic/LLM-assisted query plan，執行分層 filters 與 bounded fallback。
+# 呼叫來源: legacy query/check/ebm_generate 與 Topic content 每個 slot 的 evidence retrieval。
+# 輸入契約: diagnosis/context、safe filters、top_k；LLM expansion 只可新增合法查詢字串。
+# 輸出契約: hits、phase/query plan、filter/fallback metadata；expansion 失敗仍回 deterministic plan。
+# 安全邊界: 不因 Topic flow 放寬 OCEBM/6S/source gates；無 collection/readiness 時明確回報。
+# 維護提醒: 共用 retrieval 變更需同時跑 legacy route 與 Topic contract，避免只修單一路徑。
 # ----------------------------------------------------------------------------------------------------
 
 # File Path: ebm-rag/rag_core/core4_ragging/retriever.py
@@ -22,6 +24,7 @@ from typing import Any
 from qdrant_client.http.models import Filter, FieldCondition, MatchAny, MatchValue
 
 from rag_core.common.errors import UnconfiguredError, UnsupportedProviderError
+from rag_core.common.evidence_scope import canonical_topic_key, slot_key_from_id
 from rag_core.core2_embeddings.embedding_client import embed_texts
 from rag_core.core3_vector_store.collections import collection_name
 from rag_core.core3_vector_store.qdrant_client import get_qdrant_client
@@ -101,7 +104,11 @@ def _build_queries(dx_summary: str, case_context: dict) -> list[str]:
     )
     dx = f"{icd_code} {normalized_dx}".strip() if icd_code else normalized_dx
     tx = _as_clean_string(case_context.get("tx")) or ""
+    explicit_queries = case_context.get("retrieval_queries")
+    if not isinstance(explicit_queries, list):
+        explicit_queries = []
     return [
+        *explicit_queries,
         f"{dx} guideline diagnosis criteria",
         f"{tx} efficacy for {dx}" if tx else f"{dx} guideline treatment efficacy",
         f"{tx} contraindications adverse effects {dx}" if tx else f"{dx} contraindications adverse effects",
@@ -216,6 +223,8 @@ def _append_metadata_filters(conditions: list[FieldCondition], filters: dict, in
     source_type = _as_clean_string(filters.get("source_type"))
     is_guideline = _as_bool_or_none(filters.get("is_guideline"))
     has_contraindication_terms = _as_bool_or_none(filters.get("has_contraindication_terms"))
+    topic_key = canonical_topic_key(filters.get("topic_key"))
+    slot_key = slot_key_from_id(filters.get("slot_key"))
 
     if specialty:
         conditions.append(FieldCondition(key="specialty", match=MatchValue(value=specialty)))
@@ -227,6 +236,10 @@ def _append_metadata_filters(conditions: list[FieldCondition], filters: dict, in
         conditions.append(FieldCondition(key="is_guideline", match=MatchValue(value=is_guideline)))
     if has_contraindication_terms is not None:
         conditions.append(FieldCondition(key="has_contraindication_terms", match=MatchValue(value=has_contraindication_terms)))
+    if topic_key != "*":
+        conditions.append(FieldCondition(key="topic_key", match=MatchValue(value=topic_key)))
+    if slot_key != "*":
+        conditions.append(FieldCondition(key="slot_keys", match=MatchValue(value=slot_key)))
 
 
 def _qdrant_filter(
@@ -238,7 +251,9 @@ def _qdrant_filter(
 ) -> Filter | None:
     filters = filters or {}
     conditions: list[FieldCondition] = [
-        FieldCondition(key="quality_status", match=MatchValue(value="ok"))
+        FieldCondition(key="quality_status", match=MatchValue(value="ok")),
+        # Source lifecycle is a mandatory safety filter and survives every bounded fallback phase.
+        FieldCondition(key="source_lifecycle_status", match=MatchValue(value="current")),
     ]
 
     if six_s_levels:
@@ -267,7 +282,9 @@ def _phase_summary(name: str, six_s_levels: list[str] | None, min_ocebm: str | N
             "disease": filters.get("disease"),
             "source_type": filters.get("source_type") if include_source_type else None,
             "is_guideline": filters.get("is_guideline"),
-            "has_contraindication_terms": filters.get("has_contraindication_terms")
+            "has_contraindication_terms": filters.get("has_contraindication_terms"),
+            "topic_key": filters.get("topic_key"),
+            "slot_key": filters.get("slot_key"),
         }
     }
 

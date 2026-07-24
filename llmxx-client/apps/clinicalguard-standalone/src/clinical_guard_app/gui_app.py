@@ -483,7 +483,7 @@ class ClinicalGuardWindow:
         demo_box.grid(row=0, column=0, columnspan=2, sticky="ew", padx=3, pady=(0, 6))
         # 維護筆記:
         # 這三顆按鈕只負責「替展示者把案例填進 HIS 欄位」，不直接呼叫 EBM server。
-        # 這樣可以保留完整閉環：畫面填好後仍由 thin capture 擷取、server OCR/parse、RAG gate 決定燈號。
+        # 畫面填好後仍由 thin capture 擷取並送 server；Live + Synthetic 由 server 的 fallback gate 控制。
         for col, (scenario_key, label) in enumerate(
             [("green", "綠燈"), ("yellow", "黃燈"), ("orange", "橘燈")]
         ):
@@ -532,14 +532,14 @@ class ClinicalGuardWindow:
         demo_cases = {
             "green": {
                 "label": "綠燈",
-                "icd_display": "J30.9 - Allergic rhinitis, unspecified",
+                "icd_display": "I48.91 - Unspecified atrial fibrillation",
                 "soap": {
-                    "S": "nasal congestion and sneezing for 4 days.",
-                    "O": "mild nasal mucosal swelling, temp 37.4. No fever, no dyspnea.",
-                    "A": "allergic rhinitis",
-                    "P": "intranasal corticosteroid spray 1 puff twice daily, follow up if symptoms persist",
+                    "S": "Palpitations and dizziness",
+                    "O": "Irregular pulse, heart rate 118, no active bleeding",
+                    "A": "Atrial fibrillation",
+                    "P": "Anticoagulation for stroke prevention",
                 },
-                "vitals": {"bp": "138/82", "hr": "112", "temp": "36.8", "rr": "18", "spo2": "98"},
+                "vitals": {"bp": "128/76", "hr": "118", "temp": "36.7", "rr": "18", "spo2": "98"},
             },
             "yellow": {
                 "label": "黃燈",
@@ -554,12 +554,12 @@ class ClinicalGuardWindow:
             },
             "orange": {
                 "label": "橘燈",
-                "icd_display": "J30.9 - Allergic rhinitis, unspecified",
+                "icd_display": "I48.91 - Unspecified atrial fibrillation",
                 "soap": {
-                    "S": "palpitations for 2 days with intermittent dizziness.",
-                    "O": "irregular pulse, BP 138/82, HR 112, temp 36.8, SpO2 98. ECG suggests atrial fibrillation.",
-                    "A": "atrial fibrillation",
-                    "P": "consider oral anticoagulation for stroke prevention, prefer DOAC if no contraindication",
+                    "S": "black stools and dizziness since this morning.",
+                    "O": "irregular pulse, HR 112. Active gastrointestinal bleeding suspected; hemoglobin 8.2 g/dL. ECG suggests atrial fibrillation.",
+                    "A": "atrial fibrillation with active gastrointestinal bleeding",
+                    "P": "start apixaban immediately for stroke prevention",
                 },
                 "vitals": {"bp": "138/82", "hr": "112", "temp": "36.8", "rr": "18", "spo2": "98"},
             },
@@ -574,7 +574,7 @@ class ClinicalGuardWindow:
         self.vars["visit_time"].set(datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"))
 
         # 維護筆記:
-        # 黃燈案例刻意不帶 ICD；綠/橘案例則用同一個 J30.9，讓差異集中在 A/P 是否與 ICD 相符。
+        # 黃燈案例刻意不帶 ICD；綠燈與橘燈各自使用對應疾病與處置情境。
         # 這裡手動重設 selected_icd_record，避免上一個案例的 ICD selection 殘留到下一個案例。
         self.selected_icd_record = None
         icd_display = str(case.get("icd_display") or "")

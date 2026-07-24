@@ -14,6 +14,7 @@
 #              downgrades to review, obvious ICD-vs-A mismatch forces orange.
 # ----------------------------------------------------------------------------------------------------
 
+import re
 from typing import Any
 
 from rag_core.core4_ragging.icd_gate import evaluate_icd_gate
@@ -48,6 +49,8 @@ _PATIENT_CONTEXT_HARD_KEYS = {
 
 _PATIENT_CONTEXT_HARD_KEYWORDS = {
     "active bleeding",
+    "active gastrointestinal bleeding",
+    "active gi bleeding",
     "major bleeding",
     "severe bleeding",
     "intracranial hemorrhage",
@@ -131,6 +134,27 @@ def _context_values(value: Any) -> list[str]:
     return [str(value)]
 
 
+_NEGATION_PREFIX = re.compile(
+    r"(?:\bno\b|\bnot\b|\bwithout\b|\bden(?:y|ies|ied)\b|\babsent\b|"
+    r"\bnegative\s+for\b|\bfree\s+of\b|沒有|無|否認)(?:\s+[a-z0-9_-]+){0,4}\s*$",
+    re.IGNORECASE,
+)
+
+
+def _has_unnegated_keyword(text: str, keywords: set[str]) -> bool:
+    for keyword in keywords:
+        start = 0
+        while True:
+            match_at = text.find(keyword, start)
+            if match_at < 0:
+                break
+            prefix = text[max(0, match_at - 80):match_at]
+            if not _NEGATION_PREFIX.search(prefix):
+                return True
+            start = match_at + len(keyword)
+    return False
+
+
 def _case_context_has_hard_contraindication(case_context: dict | None) -> bool:
     if not isinstance(case_context, dict):
         return False
@@ -138,7 +162,9 @@ def _case_context_has_hard_contraindication(case_context: dict | None) -> bool:
         if str(key).strip().lower() in _PATIENT_CONTEXT_HARD_KEYS and _as_bool(value):
             return True
     context_text = _normalize_text(" ".join(_context_values(case_context)))
-    return any(keyword in context_text for keyword in _PATIENT_CONTEXT_HARD_KEYWORDS)
+    # ponytail: keep this to a short assertion-negation window; replace it with
+    # structured clinical assertion parsing if scope or temporality is expanded.
+    return _has_unnegated_keyword(context_text, _PATIENT_CONTEXT_HARD_KEYWORDS)
 
 
 def contraindication_caution_reason(chunks: list) -> dict | None:

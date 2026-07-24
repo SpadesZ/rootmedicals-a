@@ -1,0 +1,18 @@
+# 模組定位: llmebm API/scanner image 的最小 build context 規則。
+# 主要責任: 排除 runtime DB、scan artifacts、venv/cache 與測試產物，避免百 MB 無關 context。
+# 呼叫來源: Docker/BuildKit 建置 Dockerfile 與 Dockerfile.scanner。
+# 輸入契約: llmebm 目錄作為 build context。
+# 輸出契約: 映像仍包含 app、tools、main_ebm.py 與 requirements；runtime data 由 volume 提供。
+# 安全邊界: 不把本機 DB、token、截圖或虛擬環境打進映像層。
+# 維護提醒: 新增 runtime-only 大目錄時同步排除；不可排除正式啟動所需模組。
+# ----------------------------------------------------------------------------------------------------
+
+.venv/
+data/
+runtime_reports/
+__pycache__/
+*.pyc
+*.pyo
+*.db
+*.db-*
+tests/

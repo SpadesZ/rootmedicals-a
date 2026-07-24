@@ -16,7 +16,6 @@ $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $PSCommandPath
 $ServerDir = Split-Path -Parent $ScriptDir
-$RepoRoot = Split-Path -Parent $ServerDir
 $DataDir = Join-Path $ServerDir "data"
 $PidPath = Join-Path $DataDir "llmxx_server_$Port.pid"
 $LogPath = Join-Path $DataDir "llmxx_server_$Port.out.log"
@@ -76,7 +75,7 @@ function Test-PythonHasDeps {
         return $false
     }
     try {
-        & $Exe -c "import fastapi, uvicorn" 2>$null | Out-Null
+        & $Exe -c "import fastapi, uvicorn, cryptography, PIL, numpy, cv2, easyocr" 2>$null | Out-Null
         return ($LASTEXITCODE -eq 0)
     } catch {
         return $false
@@ -84,7 +83,7 @@ function Test-PythonHasDeps {
 }
 
 function Resolve-ServerPython {
-    # 依序嘗試可用的直譯器，第一個能 import fastapi/uvicorn 的就採用。
+    # 依序嘗試可用的直譯器，第一個具備完整 server/OCR runtime 的就採用。
     # 交付機常見狀況：全域 python 沒裝套件、或某個 venv 是從別台機器複製過來、
     # base 直譯器路徑失效（pyvenv.cfg 指向不存在的 python）。這裡自動略過壞掉的候選。
     $candidates = @()
@@ -92,8 +91,6 @@ function Resolve-ServerPython {
         $candidates += $env:LLMXX_PYTHON
     }
     $candidates += (Join-Path $ServerDir ".venv\Scripts\python.exe")
-    $candidates += (Join-Path $RepoRoot "venv\Scripts\python.exe")
-    $candidates += (Join-Path $RepoRoot "llmebm\.venv\Scripts\python.exe")
     $pathPython = (Get-Command python -ErrorAction SilentlyContinue).Source
     if ($pathPython) {
         $candidates += $pathPython
@@ -121,8 +118,9 @@ $ServerPython = Resolve-ServerPython
 if ($null -eq $ServerPython) {
     $reqPath = Join-Path $ServerDir "requirements.txt"
     $reason = @(
-        "[LLMXX] No Python interpreter with fastapi/uvicorn was found.",
-        "[LLMXX] Tried, in order: `$env:LLMXX_PYTHON, $ServerDir\.venv, $RepoRoot\venv, $RepoRoot\llmebm\.venv, and PATH python.",
+        "[LLMXX] No Python interpreter with the complete server/OCR runtime was found.",
+        "[LLMXX] Required: fastapi, uvicorn, cryptography, Pillow, numpy, opencv-python, easyocr.",
+        "[LLMXX] Tried, in order: `$env:LLMXX_PYTHON, $ServerDir\.venv, and PATH python.",
         "[LLMXX] Fix option A: point at a working interpreter, e.g. `$env:LLMXX_PYTHON = 'C:\path\to\python.exe'.",
         "[LLMXX] Fix option B: install deps into one of the above, e.g. python -m pip install -r `"$reqPath`"."
     ) -join [Environment]::NewLine

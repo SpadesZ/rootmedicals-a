@@ -1,0 +1,16 @@
+# 模組定位: llmebm DOM+screenshot automation worker 的獨立容器映像。
+# 主要責任: 安裝 scanner-only Scrapling/browser 依賴並啟動 durable queue worker。
+# 呼叫來源: llmebm/docker-compose.yml 的 llmebm-automation service。
+# 輸入契約: requirements.txt、requirements-scan.txt、共享 /app/data 與 automation 環境變數。
+# 輸出契約: 不對外開 port；只更新共享 SQLite queue、scan artifacts 與呼叫 llmebm generation API。
+# 安全邊界: browser 依賴與 API runtime 隔離；掃描 URL 仍由 scan_topic_manifest.py allowlist 驗證。
+# 維護提醒: Scrapling/browser 版本升級時先跑 live DOM+screenshot smoke 與 78+ contract tests。
+# ----------------------------------------------------------------------------------------------------
+
+FROM python:3.10-slim
+WORKDIR /app
+COPY requirements.txt requirements-scan.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-scan.txt \
+    && scrapling install
+COPY . .
+CMD ["python", "tools/run_topic_automation_worker.py"]

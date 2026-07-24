@@ -38,6 +38,7 @@ ERRORS: dict[str, ErrorSpec] = {
     "aes_envelope_malformed": ErrorSpec("aes_envelope_malformed", 400, "failed", False, "AES envelope is malformed."),
     "aes_key_unavailable": ErrorSpec("aes_key_unavailable", 503, "failed", True, "AES key is unavailable."),
     "client_session_conflict": ErrorSpec("client_session_conflict", 409, "failed", False, "client_session_id conflicts with a different payload."),
+    "demo_fixture_disabled": ErrorSpec("demo_fixture_disabled", 409, "failed", False, "Demo Fixture is not enabled on this server."),
     # 202 類：系統安全降級。醫師端應顯示 review，不可當成 evidence-backed。
     "rag_not_ready": ErrorSpec("rag_not_ready", 202, "not_evaluable", True, "RAG is not ready."),
     "rag_timeout": ErrorSpec("rag_timeout", 202, "degraded", True, "RAG request timed out."),

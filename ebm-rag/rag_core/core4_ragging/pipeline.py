@@ -676,7 +676,7 @@ async def run_query(dx_summary: str, case_context: dict = None, filters: dict = 
     if not _demo_candidate_already_guarded(ebm_hits):
         ebm_hits = apply_traffic_light(chunks, ebm_hits, safe_case_context)
     if demo_fallback_enabled and ebm_hits.get("status") == "ok" and ebm_hits.get("demo_candidate_kind") != "synthetic_ebm_candidate":
-        ebm_hits = await _apply_demo_verifier_gate(
+        verified_hits = await _apply_demo_verifier_gate(
             query_id=query_id,
             dx_summary=dx_summary,
             safe_case_context=safe_case_context,
@@ -686,6 +686,23 @@ async def run_query(dx_summary: str, case_context: dict = None, filters: dict = 
             calculator_results=calculator_results,
             ebm_hits=ebm_hits
         )
+        if verified_hits.get("status") == "ok":
+            ebm_hits = verified_hits
+        else:
+            verifier = verified_hits.get("demo_verifier") if isinstance(verified_hits.get("demo_verifier"), dict) else {}
+            hard_fail_reasons = verifier.get("hard_fail_reasons") if isinstance(verifier.get("hard_fail_reasons"), list) else []
+            failure_reason = ", ".join(str(reason) for reason in hard_fail_reasons if reason) or verified_hits.get("error") or "retrieved EBM verifier rejected"
+            ebm_hits = await _run_synthetic_demo_candidate(
+                query_id=query_id,
+                dx_summary=dx_summary,
+                safe_case_context=safe_case_context,
+                generation_context=generation_context,
+                safe_filters=safe_filters,
+                retrieval_payload=retrieval_payload,
+                chunks=chunks,
+                calculator_results=calculator_results,
+                failure_reason=failure_reason
+            )
 
     await sdb.save_retrieval_log(
         query_id,

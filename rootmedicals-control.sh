@@ -190,6 +190,10 @@ start() {
     if [ -z "$(is_running "$SERVER_PID")" ]; then
         if [ -d "$ROOT_DIR/llmxx-server/venv" ]; then
             echo "正在啟動 llmxx-server..."
+            if ! "$ROOT_DIR/llmxx-server/venv/bin/python" -c 'import fastapi, uvicorn, cryptography, PIL, numpy, cv2, easyocr'; then
+                echo "錯誤：llmxx-server/venv 缺少必要的 server/OCR 套件，請先安裝 llmxx-server/requirements.txt。"
+                exit 1
+            fi
             # 設定模式環境變數
             if [ "$mode" == "DemoFixture" ]; then
                 export LLMXX_DEMO_FIXTURE_MODE="true"
@@ -202,11 +206,9 @@ start() {
                 export LLMXX_RAG_DEMO_SYNTHETIC_FALLBACK="false"
             fi
             
-            source "$ROOT_DIR/llmxx-server/venv/bin/activate"
             cd "$ROOT_DIR/llmxx-server"
-            nohup uvicorn server_app.main:app --host 0.0.0.0 --port 8017 > "$DATA_DIR/llmxx_server.log" 2>&1 &
+            nohup "$ROOT_DIR/llmxx-server/venv/bin/python" -m uvicorn server_app.main:app --host 0.0.0.0 --port 8017 > "$DATA_DIR/llmxx_server.log" 2>&1 &
             echo $! > "$SERVER_PID"
-            deactivate
             cd "$ROOT_DIR"
         else
             echo "警告：未在 llmxx-server 目錄下找到虛擬環境 (venv)，跳過啟動。"

@@ -1,8 +1,10 @@
-# 檔案路徑: rootmedicals-a/ebm-rag/lava/schemas.py
-# 產生時間: 2026-06-17 16:10 +08:00
-# 版本: v0.1-交付整理
-# 說明: RAG 內部 LAVA LLM 控制層，負責 provider、任務綁定與任務執行。
-# 交付: 保留於交付包；若未來刪除，需先確認閉環 demo 與對應文件不再依賴。
+# 模組定位: LAVA management/task API 的 Pydantic trust-boundary schemas。
+# 主要責任: 驗證 connections、capability verify、binding 與 task invocation 請求。
+# 呼叫來源: lava/api_router.py 與 API clients。
+# 輸入契約: 未可信 JSON；provider/task/capability 與 image payload 受型別和欄位限制。
+# 輸出契約: 僅產生 router/executor 可安全消費的 typed request models。
+# 安全邊界: API key 只能進入 create/patch request，不得由 response model 原樣暴露。
+# 維護提醒: optional Topic task 欄位不得降低既有 required readiness gate。
 # ----------------------------------------------------------------------------------------------------
 
 # File Path: ebm-rag/lava/schemas.py

@@ -39,7 +39,7 @@ from ..integrations.rag_client import build_rag_check_request, call_rag_check
 from ..core.response_builder import build_degraded_response, build_success_response
 from ..contracts.schemas import ClinicalParse, EncryptedEnvelope, FormalClientPayload, ScreenshotClientPayload
 from ..infra.security import SafeIntakeError, decrypt_envelope, payload_hash, patient_uid_ref, reject_forbidden_payload_shape, safe_json_loads
-from ..ocr.server_ocr import screenshot_payload_to_formal
+from ..ocr.server_ocr import missing_ocr_dependencies, screenshot_payload_to_formal
 from ..infra.settings import STATIC_DIR, ensure_runtime_dirs, settings
 from ..infra.state_db import db, utc_now
 
@@ -183,13 +183,15 @@ async def safe_exception_handler(request: Request, exc: Exception):
 
 @app.get("/api/health")
 async def health():
+    missing_ocr = missing_ocr_dependencies()
     return {
-        "ok": True,
-        "status": "ok",
+        "ok": not missing_ocr,
+        "status": "ok" if not missing_ocr else "not_ready",
         "service": settings.service_name,
         "version": settings.app_version,
         "checks": {
             "db": "ok",
+            "ocr": "ready" if not missing_ocr else f"missing: {', '.join(missing_ocr)}",
             "rag": "configured" if settings.rag_check_url else "missing",
             "lava": "configured" if settings.lava_task_base_url else "missing",
             "demo_fixture": "enabled" if settings.demo_fixture_mode else "disabled",
@@ -210,6 +212,12 @@ async def root_viewer_redirect():
 async def intake(request: Request, background_tasks: BackgroundTasks):
     try:
         raw_payload = safe_json_loads(await request.body())
+        if (
+            str(raw_payload.get("demo_mode") or "").strip().lower() in {"demo_fixture", "deterministic_demo"}
+            and not settings.demo_fixture_mode
+        ):
+            # ponytail: Reject an explicit Demo request instead of silently sending it through live RAG as a misleading yellow light.
+            return _error_response("demo_fixture_disabled")
         payload = _parse_payload(raw_payload)
     except SafeIntakeError as exc:
         return _error_response(exc.error_code, message=exc.message)
