@@ -55,3 +55,6 @@ shared_data/**/*.json
 Thumbs.db
 .vscode/
 .idea/
+
+# 本機專屬設定，不同機器不同值，不進版控。
+*.local.json
