@@ -1,0 +1,99 @@
+# RootMedicals VM 部署用合併 compose
+# 產生時間: 2026-09-03
+#
+# 為什麼需要這一份，而不是直接用原本的兩份：
+#   1. 原本 docker-compose.yml 與 ebm-rag/docker-compose-rag.yml 是兩個獨立
+#      compose 專案，ebm-rag 還關在自己的 rag_internal_net，llmebm 連用服務名
+#      都碰不到它。
+#   2. env-profiles/vm.env 的 EBM_RAG_BASE_URL 預設 host.docker.internal，
+#      該名稱在純 Linux Docker host 預設不存在（vm.env 自己標了 # CONFIRM）。
+#   合併成單一 compose 後，四個服務共用預設網路，一律以服務名互連。
+#
+# 刻意排除 roothinx：使用者確認該服務目前只有框架、無實際功能。
+#
+# 啟動：
+#   docker compose -f docker-compose.vm.yml up -d --build
+# 驗證：
+#   docker compose -f docker-compose.vm.yml config --quiet
+
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: ebm_rag_qdrant
+    # 刻意不發布任何埠。qdrant 只需被同網路的 ebm-rag-engine 存取，
+    # 對外暴露向量庫等同讓任何人讀寫全部語料。防火牆也沒開 6333/6334。
+    volumes:
+      - ./ebm-rag/data/qdrant/storage:/qdrant/storage
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -ec ': >/dev/tcp/127.0.0.1/6333'"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  ebm-rag-engine:
+    build:
+      context: ./ebm-rag
+      dockerfile: Dockerfile.rag
+    container_name: ebm_rag_web_ui
+    command: uvicorn main_rag:app --host 0.0.0.0 --port 8000
+    ports:
+      - "0.0.0.0:33301:8000"
+    volumes:
+      - ./ebm-rag/rag_core:/app/rag_core
+      - ./ebm-rag/lava:/app/lava
+      - ./ebm-rag/app:/app/app
+      - ./ebm-rag/main_rag.py:/app/main_rag.py
+      # data/ 內含 sys/database/llm_match.db（LAVA 連線與 API key）與
+      # rag_state.db。必須是 bind mount，否則使用者在網頁填的金鑰
+      # 會在下次重建容器時消失。
+      - ./ebm-rag/data:/app/data
+    env_file:
+      - .env
+      - .env.topic
+    environment:
+      - ENV=development
+      - PYTHONUNBUFFERED=1
+      - YOLO_CONFIG_DIR=/tmp/Ultralytics
+      - QDRANT_URL=http://qdrant:6333
+    restart: unless-stopped
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    # /health 內含 O(indexed chunks) 的品質閘，timeout 需留餘裕
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/rag/health', timeout=12)"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 20s
+
+  llmxx-server:
+    build: ./llmxx-server
+    container_name: rootmedicals_llmxx_server
+    ports:
+      - "0.0.0.0:8000:8000"
+    volumes:
+      - ./shared_data:/shared_data
+      - ./llmxx-server/data:/app/data
+    env_file:
+      - .env
+    restart: unless-stopped
+    depends_on:
+      - ebm-rag-engine
+
+  llmebm:
+    build: ./llmebm
+    container_name: rootmedicals_llmebm
+    ports:
+      - "0.0.0.0:8001:8000"
+    volumes:
+      - ./shared_data:/shared_data
+      - ./llmebm/data:/app/data
+    env_file:
+      - .env
+      - .env.topic
+    restart: unless-stopped
+    depends_on:
+      - ebm-rag-engine

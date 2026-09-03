@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # 檔案路徑: rootmedicals-a/llmxx-client/apps/clinicalguard-standalone/src/clinical_guard_app/gui_app.py
 # 產生時間: 2026-06-25 16:38 +08:00
-# 版本: v0.9-HIS demo 情境快速填表
+# 最後更新: 2026-09-03（修正過期標頭：demo 按鈕已改為填表後自動送審）
+# 版本: v1.0-HIS demo 情境一鍵填表並自動送審
 # 模組定位:
 #   ClinicalGuard 是本機閉環驗證用的醫師端 HIS 視窗。它的任務是提供穩定、可重現的 SOAP、
 #   vital signs 與 ICD-10 輸入畫面，讓 thin capture client 可以用 Ctrl+Alt+G 擷取畫面後送往
@@ -14,7 +15,9 @@
 #   3. 保留本機儲存、同步、PDF 匯出與 debug log，方便測試閉環時回查輸入資料。
 #   4. 提供接近台灣門診 HIS 的展示版面；畫面資料皆為匿名 demo 欄位，不放真實病患姓名或 ID。
 #   5. 透過診斷清單、醫令/處置表格與 EBM 狀態條，讓現場 demo 更像醫師日常工作站。
-#   6. 提供三個小型 demo 快速填表按鈕，讓展示者不用現場複製貼上綠/黃/橘燈案例。
+#   6. 提供三個 demo 按鈕（綠/黃/橘燈）。**按一下即完成填表並自動送審**：填完欄位後
+#      以 win32api.keybd_event 模擬 Ctrl+Alt+G，交由 thin capture 擷取畫面送 server。
+#      展示者不需要自己按熱鍵。燈號仍由 server 判定，本檔不做任何 EBM 判斷。
 # 維護提醒:
 #   - 若日後接正式 HIS，請把這個檔案當作測試替身，不要把正式病患資料處理邏輯塞進 GUI。
 #   - ICD-10 選取結果是燈號判斷的重要 anchor；改 UI 欄位位置時，請同步檢查 thin capture 的
@@ -22,8 +25,13 @@
 #   - Debug 區塊預設收合，是為了 demo 時讓醫師端畫面更接近實際使用場景。
 #   - 畫面可以增加「院內系統感」的假欄位，但不要新增真病人識別欄位或硬寫個資。
 #   - SOAP 四個大型文字框仍保持 Win32 child control，可讓 thin capture 先用 control rect 偵測。
+#   - demo 按鈕的自動送審依賴 pywin32。該 import 包在 try 內，缺套件不會報錯，只會在狀態列
+#     顯示「自動送審失敗」——排查時先確認這一行，不要誤判成 server 問題。pywin32 只列在
+#     thin-capture-client 的 pyproject（本 app 的 requirements.txt 沒有），兩者共用同一個
+#     .venv；且 Start-ThinCapture-System.ps1 的相依檢查不檢查 win32api，舊 venv 會無聲失效。
 # 驗證方式:
-#   - 至少跑 py_compile、GUI self-test，並用 Ctrl+Alt+G 實際觸發一次 doctor alert。
+#   - 至少跑 py_compile、GUI self-test，並實際按一次 demo 按鈕，確認狀態列出現
+#     「已套用<燈色>並自動發起 EBM 審查」而非「自動送審失敗」。
 # ----------------------------------------------------------------------------------------------------
 """
 ClinicalGuard 本機醫師端視窗。
@@ -482,8 +490,10 @@ class ClinicalGuardWindow:
         demo_box = ttk.LabelFrame(right_panel, text="Demo 情境", style="Panel.TLabelframe")
         demo_box.grid(row=0, column=0, columnspan=2, sticky="ew", padx=3, pady=(0, 6))
         # 維護筆記:
-        # 這三顆按鈕只負責「替展示者把案例填進 HIS 欄位」，不直接呼叫 EBM server。
-        # 畫面填好後仍由 thin capture 擷取並送 server；Live + Synthetic 由 server 的 fallback gate 控制。
+        # 這三顆按鈕會把案例填進 HIS 欄位，**並在填完後自動模擬 Ctrl+Alt+G 送審**
+        # （見 _apply_demo_scenario 末段）。按鈕本身仍不直接呼叫 EBM server：
+        # 送出動作是交給 thin capture 擷取畫面，燈號一律由 server 判定。
+        # Live + Synthetic 由 server 的 fallback gate 控制。
         for col, (scenario_key, label) in enumerate(
             [("green", "綠燈"), ("yellow", "黃燈"), ("orange", "橘燈")]
         ):
