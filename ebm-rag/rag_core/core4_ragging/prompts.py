@@ -7,10 +7,20 @@
 
 # File Path: ebm-rag/rag_core/core4_ragging/prompts.py
 # Timestamp: 2026-06-09
-# Version: v0.3
+# Version: v0.4
 # Description: Core4 EBM Prompt 建構器。
 #              強制只根據 chunks 作答；calculator_results 只作為本地計算值，不可當作文獻證據。
 #              回傳必須為純 JSON，不可編造 PMID/DOI/期刊。
+# Change Notes:
+#              - v0.4 (2026-09-04): 補上 light_color 判準與 llmaaj_score 級距。
+#                v0.3 以前只給 schema 而沒有任何判斷標準，模型缺乏依據，同一份
+#                臨床輸入重複呼叫會在 green/yellow/orange 之間擺盪（實測完整
+#                case_context 五次得到 orange×4、green×1，另有一次 yellow）。
+#                判準沿用程式碼既有定義：OCEBM Level_1/Level_2 與 Six-S
+#                System/Summaries/Syntheses（traffic_light._GREEN_*），分數錨點
+#                沿用 pipeline 的 green90/yellow60/orange30。
+#                另註明 schema 中的 "llmaaj_score": 0 只是欄位佔位，不是預設值
+#                —— 舊版模型會被它錨定，實測回傳 0~5。
 # ----------------------------------------------------------------------------------------------------
 
 import json
@@ -23,7 +33,24 @@ Rules you MUST follow:
 4. Do NOT fabricate PMID, DOI, or journal names. Use only what is provided.
 5. If direct evidence is lacking, write: "lacking direct evidence".
 6. Return ONLY valid JSON. No markdown, no code fences.
-7. Output schema:
+7. light_color decision rule. Judge ONLY the evidence-to-plan relationship.
+   Apply exactly one, in this order:
+   - orange: the Evidence Chunks contradict the stated plan, or the case
+     context states a contraindication that applies to THIS patient
+     (a negated mention such as "no active bleeding" is NOT a contraindication).
+   - yellow: no citable supporting source exists, the supporting evidence is
+     only indirect, or the plan cannot be assessed from the given evidence.
+   - green: the Evidence Chunks directly support the stated plan AND at least
+     one supporting chunk is OCEBM Level_1/Level_2 or Six-S
+     System/Summaries/Syntheses.
+   Do not downgrade merely because the literature discusses risks in general.
+   Do not withhold green only because optional demographics are missing.
+   Downstream deterministic gates already enforce ICD-anchor and
+   contraindication safety, so do not double-apply them here.
+8. llmaaj_score is an integer 0-100 expressing confidence in the light_color.
+   Anchors: green ~90, yellow ~60, orange ~30. The 0 shown in the schema below
+   is a placeholder for the field, NOT a default or a suggested value.
+9. Output schema:
 {
   "light_color": "green|yellow|orange",
   "llmaaj_score": 0,

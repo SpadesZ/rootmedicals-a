@@ -64,6 +64,23 @@ _PATIENT_CONTEXT_HARD_KEYWORDS = {
     "anaphylaxis"
 }
 
+# caution 等級的「病人端」風險詞。比 _PATIENT_CONTEXT_HARD_KEYWORDS 寬，
+# 但仍然只描述病人狀態，不描述文獻內容。
+# 與 hard 版一樣交給 _has_unnegated_keyword 處理否定，因此綠燈情境寫的
+# 「no active bleeding」會被正確排除，橘燈情境的「active gastrointestinal
+# bleeding suspected」則會命中。
+_PATIENT_CONTEXT_CAUTION_KEYWORDS = {
+    "bleeding",
+    "hemorrhage",
+    "haemorrhage",
+    "contraindication",
+    "contraindicated",
+    "coagulopathy",
+    "thrombocytopenia",
+    "peptic ulcer",
+    "anticoagulant intolerance"
+}
+
 _GREEN_SIX_S = {"System", "Summaries", "Syntheses"}
 _GREEN_OCEBM = {"Level_1", "Level_2"}
 _VALID_LIGHTS = {"green", "yellow", "orange"}
@@ -165,6 +182,21 @@ def _case_context_has_hard_contraindication(case_context: dict | None) -> bool:
     # ponytail: keep this to a short assertion-negation window; replace it with
     # structured clinical assertion parsing if scope or temporality is expanded.
     return _has_unnegated_keyword(context_text, _PATIENT_CONTEXT_HARD_KEYWORDS)
+
+
+def _case_context_has_caution_contraindication(case_context: dict | None) -> bool:
+    """病人端是否存在 caution 等級的出血／禁忌風險。
+
+    與 _case_context_has_hard_contraindication 同樣先看結構化布林旗標，
+    再以否定感知的關鍵字比對掃描 case_context 文字。
+    """
+    if not isinstance(case_context, dict):
+        return False
+    for key, value in case_context.items():
+        if str(key).strip().lower() in _PATIENT_CONTEXT_HARD_KEYS and _as_bool(value):
+            return True
+    context_text = _normalize_text(" ".join(_context_values(case_context)))
+    return _has_unnegated_keyword(context_text, _PATIENT_CONTEXT_CAUTION_KEYWORDS)
 
 
 def contraindication_caution_reason(chunks: list) -> dict | None:
@@ -269,7 +301,16 @@ def apply_traffic_light(chunks: list, ebm_result: dict, case_context: dict | Non
 
     caution = contraindication_caution_reason(safe_chunks)
     if caution is not None:
-        if ebm_result["light_color"] == "green":
+        # 這個 caution 來自「檢索到的文獻提到禁忌症／出血風險」，本身不代表
+        # 這位病人有風險。以抗凝主題為例，指引的核心就是在權衡中風與出血風險，
+        # 每一段幾乎都會出現 contraindicat / bleeding risk —— 實測本語料
+        # 10/10 chunk 全數命中。若一律據此降級，綠燈在此語料下永遠不可能出現。
+        #
+        # 因此降級改由「病人端」條件決定，與 contraindication_hard_gate_reason
+        # 同時看 chunks 與 case_context 的設計對齊；文獻層級的提醒仍保留為
+        # warning，資訊不流失。
+        patient_at_risk = _case_context_has_caution_contraindication(case_context)
+        if patient_at_risk and ebm_result["light_color"] == "green":
             ebm_result["light_color"] = "yellow"
         if not _has_warning_code(ebm_result["warnings"], "contraindication_caution_detected"):
             ebm_result["warnings"].append({
@@ -277,6 +318,8 @@ def apply_traffic_light(chunks: list, ebm_result: dict, case_context: dict | Non
                 "type": "safety_caution",
                 "chunk_id": caution.get("chunk_id"),
                 "reason": caution.get("reason"),
+                "patient_context_at_risk": patient_at_risk,
+                "downgraded_light": bool(patient_at_risk),
                 "message": "Retrieved evidence discusses contraindications or bleeding-risk precautions; review patient-specific risk before treatment decisions"
             })
 

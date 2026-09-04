@@ -18,9 +18,21 @@
 # ----------------------------------------------------------------------------------------------------
 
 import json
+import os
 from lava.llm_model import LLMModel
 from lava.adapter import get_adapter
 from rag_core.core4_ragging.prompts import build_ebm_prompt
+
+# 原本硬編 4096。實測在 Top-K=10（約 19K 字元證據）時對 gemini-2.5-flash 不夠：
+# 該模型的 maxOutputTokens 涵蓋 thinking token，額度被推理吃光後 JSON 會從中間
+# 截斷，finishReason 回 MAX_TOKENS。截斷的輸出又會被 _load_json_object 的
+# raw_decode fallback 掃出「第一個完整的內層物件」（一則 rag_comments 項目），
+# 於是回傳 status=ok 但形狀錯誤的 ebm_hits，最終在 pipeline 被判成
+# ebm_hits_validation_failed → not_evaluable → 綠燈被保守降級成黃燈。
+EBM_GENERATE_MAX_TOKENS = int(os.getenv("EBM_GENERATE_MAX_TOKENS", "16384"))
+
+# 外層 envelope 的必要欄位；缺任何一個都代表拿到的不是完整結果。
+_REQUIRED_ENVELOPE_KEYS = ("light_color", "short_comment", "rag_comments")
 
 
 def _strip_json_fence(raw_text: str) -> str:
@@ -75,8 +87,40 @@ async def execute_ebm_generate(payload: dict) -> dict:
     messages = build_ebm_prompt(dx_summary, case_context, chunks)
 
     try:
-        result = await adapter.chat(conn["api_key"], conn["model_id"], messages, temperature=0.0, max_tokens=4096)
+        result = await adapter.chat(
+            conn["api_key"], conn["model_id"], messages,
+            temperature=0.0, max_tokens=EBM_GENERATE_MAX_TOKENS,
+        )
+
+        # adapter 有回傳 finish_reason，但舊版完全沒看，導致截斷靜默通過。
+        finish_reason = str(result.get("finish_reason", "") or "").upper()
+        if finish_reason == "MAX_TOKENS":
+            return {
+                "status": "failed",
+                "error": (
+                    "LLM output truncated (finishReason=MAX_TOKENS); "
+                    f"raise EBM_GENERATE_MAX_TOKENS (current={EBM_GENERATE_MAX_TOKENS})"
+                ),
+                "ebm_hits": None,
+            }
+
         ebm_hits = _load_json_object(result["content"])
+
+        # _load_json_object 在外層 JSON 壞掉時會退而擷取內層物件，形狀可能不是
+        # 完整 envelope。這裡明確擋掉，讓問題以「生成失敗」現形，而不是被下游
+        # 報成一堆難以歸因的「欄位缺漏」。
+        missing = [k for k in _REQUIRED_ENVELOPE_KEYS if k not in ebm_hits]
+        if missing:
+            return {
+                "status": "failed",
+                "error": (
+                    "LLM returned JSON without the expected EBM envelope "
+                    f"(missing: {', '.join(missing)}; finishReason={finish_reason}). "
+                    "Likely a truncated or partially-extracted object."
+                ),
+                "ebm_hits": None,
+            }
+
         ebm_hits["model"] = {"provider": conn["provider"], "model_id": conn["model_id"]}
         return {"status": "ok", "ebm_hits": ebm_hits, "error": None}
     except json.JSONDecodeError as e:
