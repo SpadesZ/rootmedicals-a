@@ -1,4 +1,4 @@
-# 檔案路徑: rootmedicals-a/llmxx-client/apps/local-ocr/src/llmxx_client_local_ocr/ocr_engine.py
+# 檔案路徑: rootmedicals-a/legacy/client-local-ocr-legacy/src/llmxx_client_local_ocr_legacy/ocr_engine.py
 # 產生時間: 2026-06-17 16:10 +08:00
 # 版本: v0.1-交付整理
 # 說明: LocalOCR 客戶端程式，負責截圖、OCR/薄客戶端傳送、醫師端提醒視窗與驗證工具。
