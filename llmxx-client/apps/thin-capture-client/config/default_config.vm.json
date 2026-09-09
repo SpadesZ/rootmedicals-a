@@ -1,6 +1,7 @@
 {
   "_version_history": [
-    "VM delivery config - client 送到雲端 VM (34.81.209.251:8000)。交付版把這份複製成 default_config.json。",
+    "VM delivery config - client 送到雲端 VM (34.81.52.76:8000)。交付版把這份複製成 default_config.json。",
+    "20260909 - endpoint 由 34.81.209.251 改為 34.81.52.76。舊位址是 RoothinksG 專案 (gen-lang-client-0011232565) 的 rootmedicals-static-ip，該專案 VM 已全數清空，該 IP 雖仍 RESERVED 但未掛任何機器，client 送出的截圖等同石沉大海。活著的 llmxx-server 在 RootMedicals 專案 (bold-ally-478706-k1) 的 rootmedicals VM 上。",
     "v0.1 20260617-2135 - thin capture client 設定：client 只截圖與送出，OCR/normalization 統一由 llmxx-server 執行。",
     "v0.2 20260617-2135 - 移除 client OCR、preprocess、normalizer、anonymizer 與 server_payload 設定面。"
   ],
@@ -101,7 +102,7 @@
     "fixture_id": "allergic_rhinitis_intranasal_steroid"
   },
   "network": {
-    "endpoint_url": "http://34.81.209.251:8000/api/intake",
+    "endpoint_url": "http://34.81.52.76:8000/api/intake",
     "send_enabled": true,
     "timeout_seconds": 120.0,
     "allow_insecure_localhost_http": true,
