@@ -105,6 +105,45 @@ class MedpilotContractTests(unittest.TestCase):
         self.assertEqual(result["status"], "insufficient_evidence")
         self.assertEqual(result["citations"], [])
 
+    def test_reworded_no_direct_evidence_also_fails_closed(self):
+        # 2026-09-10 實測回歸：模型沒有照 prompts.py 規則 5 逐字輸出 marker，
+        # 而是改寫語序，舊版字面比對整組落空，於是缺證據的回答被當成臨床答案顯示。
+        reworded = [
+            "Direct evidence is lacking regarding starting anticoagulation in atrial fibrillation.",
+            "Direct evidence for this plan was insufficient.",
+            "There is no strong direct evidence supporting this approach.",
+            "We found an absence of direct evidence for this comparison.",
+            "本地索引缺乏直接證據支持此處置。",
+            "直接證據不足，需由醫師判斷。",
+        ]
+        for comment in reworded:
+            with self.subTest(comment=comment):
+                payload = evidence_payload()
+                payload["rag_comments"][0]["comment"] = comment
+                result = build_medpilot_response(payload)
+                self.assertEqual(result["status"], "insufficient_evidence")
+                self.assertEqual(result["sections"], [])
+
+    def test_evidence_positive_wording_is_not_mistaken_for_absence(self):
+        # 守衛偏嚴是刻意的，但不能嚴到把「有證據」的句子也擋掉。
+        for comment in [
+            "The trial showed no benefit; direct evidence supports rate control here.",
+            "Direct evidence from two randomised trials supports this plan.",
+            "No adverse events were reported, and direct evidence is consistent.",
+        ]:
+            with self.subTest(comment=comment):
+                payload = evidence_payload()
+                payload["rag_comments"][0]["comment"] = comment
+                result = build_medpilot_response(payload)
+                self.assertEqual(result["status"], "ok")
+                self.assertEqual(result["kind"], "evidence_answer")
+
+    def test_response_carries_no_traffic_light(self):
+        # 燈號需要病歷/ICD/處置 context；自由問答沒有，ebm-rag 一律回 yellow + icd_missing。
+        # 那不是證據品質判斷，瀏覽器也從未渲染它，因此不放進 Medpilot 契約。
+        for result in (build_medpilot_response(evidence_payload()), smalltalk_response("hello")):
+            self.assertNotIn("light_color", result)
+
     def test_non_ok_rag_status_fails_closed_without_provider_detail(self):
         result = build_medpilot_response({
             "status": "not_evaluable",

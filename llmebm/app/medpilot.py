@@ -3,6 +3,7 @@
 # 呼叫來源: main_ebm.py 的 POST /api/v1/medpilot/query 與無網路 contract tests。
 # 輸入契約: ebm-rag /api/v1/rag/query 回傳的 dict；臨床段落的 chunk_id 必須存在於本次 retrieval chunks。
 # 輸出契約: rootmedicals-medpilot-answer.v1；證據不完整時只回 insufficient_evidence，不回部分臨床答案。
+#           不含 light_color：燈號需要病歷/ICD/處置 context，自由問答沒有，回了只會誤導。
 # 安全邊界: 不呼叫模型、不寫資料庫、不接受模型自報但 retrieval 無法核對的 citation，也不外洩 provider 錯誤細節。
 # 維護提醒: 這是單輪唯讀 MVP；對話記憶、病人 context 與疾病頁寫入不得偷偷加在此層。
 # ----------------------------------------------------------------------------------------------------
@@ -15,11 +16,30 @@ _SMALLTALK = {
     "hi", "hello", "hey", "goodmorning", "goodafternoon", "goodevening",
     "哈囉", "哈啰", "你好", "您好", "嗨", "在嗎", "早安", "午安", "晚安",
 }
-_NO_DIRECT_EVIDENCE = (
-    "lacking direct evidence",
-    "lack direct evidence",
-    "insufficient direct evidence",
-    "no direct evidence",
+# 這道守衛擋的是「模型自己說沒有直接證據，系統卻照樣顯示成臨床答案」。
+# 舊版是四個字面片語的子字串比對，配合 prompts.py 規則 5 要求模型寫出
+# "lacking direct evidence"。但模型會改寫語序：實測 AF 抗凝那題回的是
+# "Direct evidence is lacking regarding starting anticoagulation..."，
+# 四個 pattern 一個都沒中，於是 Medpilot 回了 status=ok 的臨床答案，
+# 而答案第一句自己說沒有直接證據 —— 正是這道守衛要擋的情況。
+# 改成涵蓋兩種語序與中文說法（回答語言會跟著提問語言走）。
+# 判斷刻意偏嚴：誤判只是少答一題，漏判則會顯示不該顯示的臨床內容。
+_ABSENCE = r"lack(?:s|ing|ed)?|insufficient|absence|absent|unavailable|missing"
+_LINK = r"is|are|was|were|remains?|appears?|seems?"
+# 中間允許的字刻意用 [A-Za-z]+ 而非 \w+：遇到標點就斷開，
+# 才不會把「no benefit; direct evidence supports ...」誤判成缺證據。
+_NO_DIRECT_EVIDENCE_RE = re.compile(
+    # lacking / insufficient / lack of ... direct evidence
+    rf"(?:{_ABSENCE})(?:\s+[A-Za-z]+){{0,2}}\s+direct\s+evidence"
+    # no direct evidence / no strong direct evidence
+    rf"|\bno(?:\s+[A-Za-z]+){{0,1}}\s+direct\s+evidence"
+    # direct evidence is lacking / direct evidence for X was insufficient
+    rf"|direct\s+evidence(?:\s+[A-Za-z]+){{0,3}}\s+(?:{_LINK})\s+(?:[A-Za-z]+\s+){{0,1}}(?:{_ABSENCE})"
+    # 缺乏／沒有／無……直接證據
+    r"|(?:缺乏|缺少|沒有|没有|無|无)[^。；;\n]{0,8}直接(?:證據|证据)"
+    # 直接證據……不足／闕如／不存在
+    r"|直接(?:證據|证据)[^。；;\n]{0,8}(?:不足|缺乏|缺少|闕如|阙如|不存在)",
+    re.IGNORECASE,
 )
 
 
@@ -60,8 +80,8 @@ def smalltalk_response(query):
 
 
 def _contains_no_direct_evidence(text):
-    normalized = _normal_text(text).lower()
-    return any(marker in normalized for marker in _NO_DIRECT_EVIDENCE)
+    # 不再 .lower()：regex 已帶 IGNORECASE，中文也不受大小寫影響。
+    return bool(_NO_DIRECT_EVIDENCE_RE.search(_normal_text(text)))
 
 
 def _citation_from_source(source, chunk):
@@ -161,6 +181,9 @@ def build_medpilot_response(rag_result):
         "citations": citations,
         "warnings": warnings,
         "query_id": _normal_text(query_id, 120),
-        "light_color": _normal_text(rag_result.get("light_color") or "yellow", 20),
+        # 這裡刻意不回 light_color。燈號是「病歷 + ICD + 處置」三者齊全時的判讀結果，
+        # Medpilot 是沒有病歷 context 的自由問答，ebm-rag 一律回 yellow 並附
+        # icd_missing —— 那不是證據品質的判斷，只是「這裡本來就沒有 ICD」。
+        # 瀏覽器端 appendEvidenceAnswer 從來沒有渲染它，留著只會誤導 API 使用者。
         "rag_called": True,
     }
