@@ -27,6 +27,7 @@ from rag_core.common import state_db as sdb
 from rag_core.common.chunk_quality import summarize_chunk_quality
 from rag_core.core4_ragging.calculators import run_requested_calculators
 from rag_core.core4_ragging.demo_verifier import demo_synthetic_fallback_enabled, score_candidate
+from rag_core.core4_ragging.prompts import MAX_PROMPT_CHUNKS
 from rag_core.core4_ragging.retriever import retrieve
 from rag_core.core4_ragging.traffic_light import apply_traffic_light
 
@@ -159,6 +160,40 @@ def _apply_score_light_mapping(ebm_hits: dict) -> dict:
         ebm_hits["light_color"] = "green"
     else:
         ebm_hits["light_color"] = "yellow"
+    return ebm_hits
+
+
+def _resolve_source_refs(chunks: list, ebm_hits: dict) -> dict:
+    """Map the local C-labels shown in the prompt back onto real chunk ids.
+
+    The prompt hands the model C1..CN instead of real chunk ids, which end in a
+    running number the model would otherwise extrapolate from — citing a
+    neighbouring chunk it was never shown and voiding the whole answer. Real
+    chunk ids are still accepted so nothing regresses if a model echoes one.
+    Unknown labels are deliberately left untouched: validation must still reject
+    them rather than have them silently resolve to something plausible.
+    """
+    ref_map = {}
+    for index, chunk in enumerate(chunks[:MAX_PROMPT_CHUNKS]):
+        chunk_id = str(chunk.get("chunk_id") or "").strip()
+        if chunk_id:
+            ref_map["c%d" % (index + 1)] = chunk_id
+
+    rag_comments = ebm_hits.get("rag_comments")
+    if not isinstance(rag_comments, list):
+        return ebm_hits
+    for comment in rag_comments:
+        if not isinstance(comment, dict):
+            continue
+        sources = comment.get("sources")
+        if not isinstance(sources, list):
+            continue
+        for source in sources:
+            if not isinstance(source, dict):
+                continue
+            resolved = ref_map.get(str(source.get("chunk_id") or "").strip().lower())
+            if resolved:
+                source["chunk_id"] = resolved
     return ebm_hits
 
 
@@ -371,6 +406,7 @@ async def _run_synthetic_demo_candidate(
             safe_filters,
             calculator_results
         )
+        candidate = _resolve_source_refs(chunks, candidate)
         candidate["demo_candidate_kind"] = "synthetic_ebm_candidate"
         candidate = _append_warning(candidate, {
             "code": "demo_synthetic_candidate_generated",
@@ -598,6 +634,7 @@ async def run_query(dx_summary: str, case_context: dict = None, filters: dict = 
     if gen_result.get("status") == "ok" and isinstance(gen_result.get("ebm_hits"), dict):
         ebm_hits = gen_result["ebm_hits"]
         ebm_hits = _attach_query_context(ebm_hits, query_id, retrieval_payload, safe_filters, calculator_results)
+        ebm_hits = _resolve_source_refs(chunks, ebm_hits)
         schema_errors = _schema_validation_errors(ebm_hits)
         source_errors = _source_validation_errors(chunks, ebm_hits)
         validation_errors = schema_errors + source_errors
