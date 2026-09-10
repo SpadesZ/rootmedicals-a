@@ -25,6 +25,60 @@
       "publication_year": 2024,
       "organization": "ACC/AHA/ACCP/HRS",
       "policy_note": "Local internal validation only; commercial publication remains blocked until written permission and legal review are recorded."
+    },
+    {
+      "paper_ids": [
+        "RM_AR_GUIDE_2020"
+      ],
+      "document_version": "2020-practice-parameter-jaci-2020-146-721-767",
+      "lifecycle_status": "current",
+      "license_status": "permission_required",
+      "permitted_uses": ["internal_validation"],
+      "commercial_publication_allowed": false,
+      "rights_source_url": "https://www.elsevier.com/about/policies-and-standards/copyright/permissions",
+      "rights_reviewed_at": "2026-09-10",
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/32707227/",
+      "doi": "10.1016/j.jaci.2020.07.007",
+      "pmid": "32707227",
+      "publication_year": 2020,
+      "organization": "Joint Task Force on Practice Parameters / AAAAI / ACAAI",
+      "policy_note": "Rights fields were populated by applying the same conservative defaults already recorded for the ACC/AHA AF guideline; no independent copyright review of the Elsevier/JACI terms has been performed yet. Internal validation only; commercial publication stays blocked until written permission and legal review are recorded."
+    },
+    {
+      "paper_ids": [
+        "RM_ARIA_INTRANASAL_2026"
+      ],
+      "document_version": "aria-eaaci-2024-2025-revision",
+      "lifecycle_status": "current",
+      "license_status": "approved",
+      "permitted_uses": ["internal_validation", "retrieval_generation", "commercial_publication"],
+      "commercial_publication_allowed": true,
+      "rights_source_url": "https://creativecommons.org/licenses/by/4.0/",
+      "rights_reviewed_at": "2026-09-10",
+      "source_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13040648/",
+      "doi": "10.1111/all.70131",
+      "pmid": "41324154",
+      "publication_year": 2026,
+      "organization": "EAACI / ARIA",
+      "policy_note": "ARIA-EAACI 2024-2025 Revision Part I (Intranasal Treatments), Allergy (Wiley). Open access under CC BY 4.0, confirmed programmatically via the Europe PMC licence field for this DOI. Redistribution and commercial use are permitted with attribution to the original authors and journal."
+    },
+    {
+      "paper_ids": [
+        "RM_ARIA_ORAL_OCULAR_2026"
+      ],
+      "document_version": "aria-eaaci-2024-2025-revision",
+      "lifecycle_status": "current",
+      "license_status": "approved",
+      "permitted_uses": ["internal_validation", "retrieval_generation", "commercial_publication"],
+      "commercial_publication_allowed": true,
+      "rights_source_url": "https://creativecommons.org/licenses/by/4.0/",
+      "rights_reviewed_at": "2026-09-10",
+      "source_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13256267/",
+      "doi": "10.1111/all.70305",
+      "pmid": "41877472",
+      "publication_year": 2026,
+      "organization": "EAACI / ARIA",
+      "policy_note": "ARIA-EAACI 2024-2025 Revision Part II (Oral and Ocular Treatments), Allergy (Wiley). Open access under CC BY 4.0, confirmed programmatically via the Europe PMC licence field for this DOI. Redistribution and commercial use are permitted with attribution to the original authors and journal."
     }
   ]
 }

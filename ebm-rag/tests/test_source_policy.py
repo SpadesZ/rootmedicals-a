@@ -32,14 +32,43 @@ AF_PAPERS = {
     "RM_AF_ANTICOAG_2023", "RM_AF_RATE_CONTROL_2023", "RM_AF_RHYTHM_CONTROL_2023",
 }
 
+# The registry is the default policy source for every paper, not just AF, so it
+# also carries the allergy corpus. These two sets must behave differently at the
+# commercial-use gate: the AF and Rhinitis 2020 guidelines are not open access,
+# whereas the ARIA-EAACI parts are CC BY.
+PERMISSION_REQUIRED_PAPERS = AF_PAPERS | {"RM_AR_GUIDE_2020"}
+CC_BY_PAPERS = {"RM_ARIA_INTRANASAL_2026", "RM_ARIA_ORAL_OCULAR_2026"}
+
 
 class SourcePolicyTests(unittest.TestCase):
     def test_af_registry_covers_every_prepared_paper_and_blocks_commercial_use(self):
         policies = load_source_policy_registry()
-        self.assertEqual(set(policies), AF_PAPERS)
+        self.assertTrue(AF_PAPERS.issubset(set(policies)))
         gate = evaluate_source_use(policies, sorted(AF_PAPERS), "commercial_publication")
         self.assertFalse(gate["allowed"])
         self.assertEqual({item["reason"] for item in gate["blocked"]}, {"license_permission_required"})
+
+    def test_non_open_access_sources_stay_blocked_for_commercial_use(self):
+        policies = load_source_policy_registry()
+        self.assertTrue(PERMISSION_REQUIRED_PAPERS.issubset(set(policies)))
+        gate = evaluate_source_use(
+            policies, sorted(PERMISSION_REQUIRED_PAPERS), "commercial_publication")
+        self.assertFalse(gate["allowed"])
+        self.assertEqual({item["reason"] for item in gate["blocked"]}, {"license_permission_required"})
+
+    def test_cc_by_sources_are_cleared_for_commercial_use(self):
+        policies = load_source_policy_registry()
+        self.assertTrue(CC_BY_PAPERS.issubset(set(policies)))
+        gate = evaluate_source_use(policies, sorted(CC_BY_PAPERS), "commercial_publication")
+        self.assertTrue(gate["allowed"])
+        self.assertEqual(gate["blocked"], [])
+
+    def test_every_registry_entry_is_current_and_validates(self):
+        policies = load_source_policy_registry()
+        self.assertTrue(policies)
+        for paper_id, policy in policies.items():
+            self.assertEqual(policy["paper_id"], paper_id)
+            self.assertEqual(policy["lifecycle_status"], "current")
 
     def test_missing_and_withdrawn_source_fail_closed(self):
         policy = self._approved_policy("withdrawn-paper")
