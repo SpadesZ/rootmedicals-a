@@ -1,5 +1,7 @@
 ﻿# 檔案路徑: rootmedicals-a/llmxx-client/RootMedicals-Control.ps1
 # 說明: 醫師端控制台 GUI，專門對接已部署至 GCP VM 的後端服務。
+# 更版: 2026-09-10 GUI 只保留 Start Live RAG。LiveSynthetic / DemoFixture 是 server 端
+#       互斥狀態，client 切不了，在目前 VM 部署下按了必定失敗；兩者仍可用 -Action 走 CLI。
 
 param(
     [ValidateSet("Gui", "Status", "Live", "LiveSynthetic", "DemoFixture", "Stop")]
@@ -268,23 +270,24 @@ $statusLabel.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 $statusLabel.BackColor = [System.Drawing.Color]::FromArgb(248, 250, 252)
 $form.Controls.Add($statusLabel)
 
+# 維護筆記 —— 這裡刻意只有一顆啟動按鈕，請不要「順手」把另外兩顆加回來。
+# Live / LiveSynthetic / DemoFixture 是 server 端的**互斥狀態**，由
+# LLMXX_DEMO_FIXTURE_MODE 與 LLMXX_RAG_DEMO_SYNTHETIC_FALLBACK 決定
+# （見 rootmedicals-control.sh 設定模式那段）；VM 上要改 .env 並重啟容器才會變。
+# client 端切不了模式，按鈕只是「斷言 server 已經在該模式」，不符就丟錯誤框。
+# 舊版三顆長得一樣、都可按，但 VM 的 /api/health 是 demo_fixture=disabled +
+# rag_synthetic_fallback=disabled，等於三顆有兩顆必定失敗，而錯誤訊息還叫使用者
+# 「Start that mode on the VM first」—— 那是醫師端做不到、也不該做的事。
+# 何況那兩個模式會回合成／罐頭 EBM，本來就不該出現在臨床評估用的交付包。
+# 需要那兩個模式時仍可走 CLI：
+#   .\RootMedicals-Control.ps1 -Action LiveSynthetic
+#   .\RootMedicals-Control.ps1 -Action DemoFixture
+# 能力沒有被拿掉，只是不放進醫師會看到的畫面。
 $btnLive = [System.Windows.Forms.Button]::new()
 $btnLive.Text = "Start Live RAG"
 $btnLive.Location = [System.Drawing.Point]::new(22, 185)
-$btnLive.Size = [System.Drawing.Size]::new(150, 42)
+$btnLive.Size = [System.Drawing.Size]::new(200, 42)
 $form.Controls.Add($btnLive)
-
-$btnDemo = [System.Windows.Forms.Button]::new()
-$btnDemo.Text = "Start Live + Synthetic"
-$btnDemo.Location = [System.Drawing.Point]::new(188, 185)
-$btnDemo.Size = [System.Drawing.Size]::new(170, 42)
-$form.Controls.Add($btnDemo)
-
-$btnFixture = [System.Windows.Forms.Button]::new()
-$btnFixture.Text = "Start Demo Fixture"
-$btnFixture.Location = [System.Drawing.Point]::new(374, 185)
-$btnFixture.Size = [System.Drawing.Size]::new(170, 42)
-$form.Controls.Add($btnFixture)
 
 $btnStop = [System.Windows.Forms.Button]::new()
 $btnStop.Text = "Stop Client"
@@ -294,7 +297,7 @@ $form.Controls.Add($btnStop)
 
 $btnRefresh = [System.Windows.Forms.Button]::new()
 $btnRefresh.Text = "Refresh"
-$btnRefresh.Location = [System.Drawing.Point]::new(560, 185)
+$btnRefresh.Location = [System.Drawing.Point]::new(238, 185)
 $btnRefresh.Size = [System.Drawing.Size]::new(120, 42)
 $form.Controls.Add($btnRefresh)
 
@@ -330,7 +333,7 @@ $form.Controls.Add($logBox)
 
 function Set-ButtonsEnabled {
     param([bool]$Enabled)
-    foreach ($button in @($btnLive, $btnDemo, $btnFixture, $btnStop, $btnRefresh, $btnViewer)) {
+    foreach ($button in @($btnLive, $btnStop, $btnRefresh, $btnViewer)) {
         $button.Enabled = $Enabled
     }
 }
@@ -434,8 +437,6 @@ function Start-ModeFromUi {
 }
 
 $btnLive.Add_Click({ Start-ModeFromUi -Mode "Live" })
-$btnDemo.Add_Click({ Start-ModeFromUi -Mode "LiveSynthetic" })
-$btnFixture.Add_Click({ Start-ModeFromUi -Mode "DemoFixture" })
 $btnStop.Add_Click({ Run-UiAction { Stop-ServerAndClient -LogBox $logBox } })
 $btnRefresh.Add_Click({ Run-UiAction { Add-LogLine "Status refreshed." $logBox } })
 $btnViewer.Add_Click({ Open-Url -Url $DoctorViewerUrl })
