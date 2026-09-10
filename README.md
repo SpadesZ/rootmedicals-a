@@ -137,8 +137,24 @@ cd rootmedicals
 控制台將自動啟動：
 - `llmxx-server` (Port `8017`)
 - `ClinicalGuard Mock HIS`
-- `LocalOCR 輕量截圖客戶端`
+- `thin-capture-client 輕量截圖客戶端`（只截圖與送出，OCR 由 llmxx-server 執行）
 - `LLMEBM 知識庫 UI` (Port `33300`)
+
+### 3. 打包醫師端交付包 (Build the Client Delivery Package)
+
+```powershell
+.\Build-ClientDelivery.ps1                 # 沿用 default_config.vm.json 登記的後端位址
+.\Build-ClientDelivery.ps1 -WhatIfOnly     # 只組裝與檢查，不產出 zip
+```
+
+產出 `RootMedicals-HIS-Client-<日期>.zip`。**請一律用這支腳本，不要手動壓縮**：
+交付包裡有三個檔案不存在於本倉庫（`README-START-HERE.txt`、
+`Start-RootMedicals-HIS-Demo.cmd`、交付用的 `default_config.json`），
+而且倉庫內的 `default_config.json` 指向本機開發後端，實際位址只存在於
+`default_config.vm.json`，必須由打包流程複製過去。漏掉這步，client 會靜靜
+連向 localhost 且完全不報錯。腳本會在產出後重新打開 zip 驗證 endpoint、
+確認沒有夾帶執行期病歷或 `.venv` 殘留。細節見
+[`llmxx-client/README.md`](llmxx-client/README.md)。
 
 ---
 
