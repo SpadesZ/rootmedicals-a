@@ -1,7 +1,7 @@
 # Clinical demo screenshot and sample
 
-`clinical-demo.png` is a real browser capture of `/demo/latest` from a fresh
-local instance on 2026-10-01. `demo-payload.json` is a fully synthetic case
+`clinical-demo.png` is a real browser capture of the event-log panel at `/demo/latest`
+from the isolated fixture instance on 2026-10-02. `demo-payload.json` is a fully synthetic case
 that selects the repository's fixed `allergic_rhinitis_intranasal_steroid`
 fixture in `llmxx-server/server_app/core/demo_fixtures.py`.
 

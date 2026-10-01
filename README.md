@@ -6,17 +6,20 @@ This local prototype connects a mock clinical screen, screenshot intake and
 an evidence-review viewer. It has distinct live, synthetic-fallback and fixed
 fixture modes; they do not establish the same level of evidence.
 
-![Actual local viewer showing a fixed synthetic demo fixture](docs/assets/clinical-demo.png)
-
-*Real UI, synthetic case, fixed demo evidence. The displayed scores, green
-indicator, citation identifiers and comments are fixture values. They are not
-clinical validation or retrieved research results. Original UI labels are
-shown unchanged.*
-
 **Prototype / synthetic boundary:** this preview does not verify OCR,
 live retrieval, clinical correctness, deployment readiness or patient use.
 
 [Preview the fixture](#quick-start-synthetic-viewer) · [Use the control panel](#full-local-demo-control-panel) · [Read the procedure](doc/procedure.md)
+
+*Real UI, fixed synthetic fixture. Full-view scores, GREEN and citations are
+demo values, not clinical evidence. Original UI labels are unchanged.*
+
+![Actual viewer event log showing that Demo Fixture skips live RAG](docs/assets/clinical-demo.png)
+
+The event log states that Demo Fixture skips live RAG. In this fixed fixture,
+`evidence_backed: true` and GREEN are **demo values**, not proof of retrieved
+evidence. Open JSON in the full viewer to inspect `demo_only_not_live_rag`
+and `source_type: demo_fixture`.
 
 ## Quick Start: synthetic viewer
 
