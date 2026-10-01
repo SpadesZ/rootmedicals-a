@@ -1,0 +1,15 @@
+{
+  "schema_version": "llmxx-client-local-ocr.v0.1",
+  "session_id": "presentation-synthetic-demo",
+  "source": "documentation-example",
+  "patient_uid": "[REDACTED]",
+  "icd10_code": "J30.9",
+  "soap": {
+    "S": "Synthetic sample: nasal congestion for four days",
+    "O": "Synthetic sample: temperature 37.4 C",
+    "A": "allergic rhinitis",
+    "P": "intranasal corticosteroid spray"
+  },
+  "demo_mode": "demo_fixture",
+  "demo_fixture_id": "allergic_rhinitis_intranasal_steroid"
+}
