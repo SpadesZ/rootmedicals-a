@@ -1,13 +1,15 @@
-# RootMedicals — Clinical Evidence Demo
+# RootMedicals — Clinical Evidence Workflow Prototype
 
-Capture a sample clinical screen and review the evidence summary.
+Review sample clinical inputs alongside an evidence-oriented response.
 
-This local prototype connects a mock clinical screen, screenshot intake and
-an evidence-review viewer. It has distinct live, synthetic-fallback and fixed
-fixture modes; they do not establish the same level of evidence.
+Configured path: **sample clinical screen → capture / server OCR / intake → evidence retrieval → response for review.**
 
-**Prototype / synthetic boundary:** this preview does not verify OCR,
-live retrieval, clinical correctness, deployment readiness or patient use.
+**Shown here: synthetic intake → fixed demo fixture → review UI.**
+This preview skips screen capture, OCR and live retrieval. The repository has
+separate fixture, synthetic-fallback and configured live paths.
+
+Prototype/demo only. No clinical validation, diagnostic capability or
+production medical-system acceptance is claimed.
 
 [Preview the fixture](#quick-start-synthetic-viewer) · [Use the control panel](#full-local-demo-control-panel) · [Read the procedure](doc/procedure.md)
 
@@ -61,8 +63,12 @@ and configured RAG workflows.
 The existing HTTP smoke script assumes that clearing `soap.A` removes the
 diagnosis. The sample above also supplies an ICD diagnosis, so that one legacy
 assertion does not apply to this sample. To test a missing diagnosis, clear
-both fields. This review verified fixture provenance and rejection of missing
-diagnosis/unsupported schemas; it did not certify clinical outcomes.
+both fields. In the 2026-10-02 final-batch check, synthetic intake succeeded with
+`demo_only_not_live_rag` and `source_type: demo_fixture`. A missing diagnosis
+was rejected/degraded, and an unsupported schema was rejected. The screenshot
+was recaptured from the real fixture viewer; it contains no patient record.
+Existing dependencies were reused. No OCR, live retrieval, capture-client
+end-to-end run, clinical outcome or production deployment was tested.
 
 ## Technical Details
 
