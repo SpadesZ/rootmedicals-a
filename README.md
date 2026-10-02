@@ -70,8 +70,6 @@ was recaptured from the real fixture viewer; it contains no patient record.
 Existing dependencies were reused. No OCR, live retrieval, capture-client
 end-to-end run, clinical outcome or production deployment was tested.
 
-## Technical Details
-
 ## Full local demo control panel
 
 Use only the root control panel for demo operation:
